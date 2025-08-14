@@ -1,0 +1,94 @@
+OBJECTIF
+Crée un module complet pour le bot Discord (discord.py + aiosqlite) qui implémente le système de matching suivant :
+- Algorithme léger et précis basé sur : intérêts (weighted Jaccard + IDF + fuzzy/synonyms), âge (gaussienne), vecteur personnalité optionnel (cosine).
+- Flux de suggestion anonymisée en DM, boutons [Accepter] [Passer] [Signaler].
+- Double opt-in par défaut pour révélation mutuelle ; option legacy `notify_on_single_accept` si activée au niveau serveur.
+- Suggestions proactives automatiques (boucle) avec opt-out, rate limits et logs.
+- Si aucun profil trouvé : renvoyer "Veuillez réessayer plus tard" et proposer option "Suggérer un candidat" (flow manuel).
+- À la fin d’un match (selon config), le bot **doit** notifier l’utilisateur matché par DM (implémenter double opt-in recommandé, mais permettre l’option legacy qui envoie DM disant que `@pseudo` a accepté).
+
+CONTRAINTES GÉNÉRALES
+- Langage : Python 3.10+.
+- Librairies : discord.py >= 2.2.x, aiosqlite, python-dotenv (optionnel).
+- Ne jamais inclure le token dans le code : utiliser la variable d’environnement DISCORD_TOKEN (Replit Secrets).
+- Architecture modulaire : cog `cogs/match.py`, utilitaire `cogs/utils_match.py`, cog optionnel `cogs/match_proactive.py`.
+- Respect strict : **pas de match mineur↔majeur** (filtre hard).
+- Code asynchrone et résilient : gérer DMs fermés, erreurs DB, exceptions API.
+- Fournir commentaires clairs dans le code et un README expliquant l’installation, config, tests.
+
+LIVRABLES ATTENDUS (générer les fichiers)
+- `bot.py` (si absent) : charge cogs, lit DISCORD_TOKEN, sync des slash commands, démarrage propre.
+- `cogs/utils_match.py` : fonctions de normalisation, canonicalize, compute_idf, weighted_interest_score, age_score, cosine_similarity, compute_match_score, helpers pour update IDF incrémental.
+- `cogs/match.py` : cog principal du matching, commandes et boutons handlers :
+  - Slash cmds : `/findmatch`, `/createprofile`, `/deleteprofile`, `/editprofile` (au moins placeholders pour le profil).
+  - Handlers buttons : `match_accept:{candidate_id}:{nonce}`, `match_next:{candidate_id}:{nonce}`, `match_report:{candidate_id}:{nonce}`, `view_profile:{candidate_id}:{nonce}`, `decline:{candidate_id}:{nonce}`.
+  - Flow double opt-in, storage `matches` table CRUD (status pending_b / accepted / rejected).
+  - Fallbacks si DMs fermés (informer initiateur, log).
+- `cogs/match_proactive.py` (ou incorporé) : boucle asynchrone qui propose automatiquement des suggestions éligibles par DM, crée table `suggestions`, respecte opt-out & rate-limits. Handlers pour `pro_view`, `pro_next`, `pro_report`.
+- `database/profiles.db` (créée automatiquement au 1er run) avec tables : `profiles`, `matches`, `suggestions`, `reports`.
+- `requirements.txt` listant `discord.py>=2.2.0`, `aiosqlite`, `python-dotenv`.
+- `README.md` : instructions Replit (Secrets), installation, tests manuels, config options (double_opt_in, notify_on_single_accept, proactive settings).
+- Fournir des exemples de templates de messages/embeds et custom_id format.
+
+SCHÉMA DB (minimum)
+- `profiles` : user_id TEXT PK, prenom TEXT, pronoms TEXT, age INTEGER, interets TEXT (JSON), interets_canonical TEXT (JSON, optionnel), description TEXT, avatar_url TEXT, vector TEXT (JSON), prefs TEXT (JSON), activity_score REAL, created_at TEXT
+- `matches` : id INTEGER PK, user_a TEXT, user_b TEXT, status TEXT, nonce TEXT, created_at TEXT, updated_at TEXT
+- `suggestions` : id INTEGER PK, user_id TEXT, candidate_id TEXT, status TEXT, nonce TEXT, created_at TEXT, updated_at TEXT
+- `reports` : id INTEGER PK, reporter TEXT, reported TEXT, reason TEXT, created_at TEXT
+
+ALGORITHME & PARAMÈTRES (exacts)
+- Normalisation tags : lowercase, enlever accents, remplacer espaces par `_`, retirer ponctuation.
+- Synonyms map (configurable) + fuzzy fallback (SequenceMatcher ou rapidfuzz si installé).
+- IDF : weight(tag) = log((1 + N) / (1 + df(tag))) + 1 ; calcul initial au startup puis update incrémental (create/edit/delete).
+- S_interests = weighted Jaccard avec poids IDF et comptage fuzzy pour paires similaires.
+- S_age = exp( - (|ageA - ageB|²) / (2 * sigma²) ), default sigma = 4.
+- S_personality = cosine(v1, v2) si vecteurs fournis.
+- Score final : Score = w_i*S_interests + w_p*S_personality + w_a*S_age ; defaults w_i=0.55, w_p=0.25, w_a=0.20 — valeurs configurables.
+
+WORKFLOW DÉTAILLÉ (pour `/findmatch` et proactive)
+1. A lance `/findmatch` (ou bot propose proactivement) :
+   - Récupérer profil A, charger idf_weights (cache).
+   - Filtrer candidats (age prefs, opt-out, activity, blocks).
+   - Calculer score pour candidats, trier, préparer queue top-N.
+   - Envoyer DM anonymisé à A (Embed + Buttons). Contenu : 3–5 intérêts, tranche d’âge, extrait bio ≤150 chars (aucun pseudo ni avatar).
+2. Actions dans DM :
+   - [Passer] → envoyer suivant automatiquement. Si queue vide → message "Aucun profil pour le moment, veuillez réessayer plus tard." + bouton "Suggérer un candidat".
+   - [Signaler] → enregistrer report, alerter admins.
+   - [Accepter] → si double_opt_in True (par défaut) : créer `matches` status='pending_b' et envoyer DM anonyme à B : "Quelqu’un correspondant à vos critères souhaite se connecter. Voulez-vous voir son profil anonymisé ?" (Buttons Voir profil / Refuser / Signaler). Si B accepte -> status accepted -> révélation mutuelle aux deux. Si double_opt_in False & notify_on_single_accept True -> envoyer DM à B disant que `@A` a accepté (legacy).
+3. Révélation mutuelle : DM aux deux avec identité complète (mention, avatar, bio), enregistrer match final.
+4. Si B a DMs fermées : gérer exception, informer A proprement (ephemeral), log attempt.
+5. Manuel : si A choisit "Suggérer un candidat", ouvrir modal pour user_id candidate ; vérifier eligibility (age, prefs, opt-out) et traiter comme si A l’avait choisi (envoi anonymisé & double opt-in flow).
+
+SUGGESTIONS PROACTIVES
+- Paramètres : PROACTIVE_ENABLED (bool), PROACTIVE_INTERVAL_MINUTES, PROACTIVE_COOLDOWN_HOURS, MAX_SUGGESTIONS_PER_USER_PER_DAY.
+- Eligibility : prefs.opt_out_proactive False, profil complet (>=2 tags), pas de suggestion récente, pas de block/report élevé, respect rate limit.
+- Implémenter `proactive_loop` asynchrone démarrée dans on_ready(), modérable par admin command `/config set proactive true/false`.
+
+HANDLERS / BUTTONS
+- Utiliser `custom_id` format => e.g. `match_accept:{candidate_id}:{nonce}`, `match_next:{candidate_id}:{nonce}`, `pro_view:{candidate_id}:{nonce}`.
+- Valider nonce pour prévenir replay. Mettre logs dans table `suggestions` / `matches`.
+- Gérer DMs fermées et renvoyer fallback (ephemeral in guild if possible).
+
+SECURITÉ & CONFIDENTIALITÉ
+- Ne jamais proposer mineur↔majeur.
+- Par défaut, activer DOUBLE OPT-IN (meilleure pratique). Permettre legacy option configurable.
+- Opt-out global per-user pour suggestions proactives.
+- Possibilité de suppression complète du profil (/deleteprofile) et export JSON via admin (/export_profiles).
+- Rate-limit et anti-abuse : bloquer user si trop de reports, logs pour modération.
+
+TESTS MANUELS À FOURNIR DANS README
+- Création 3 profils (A,B,C) : A et B similaires, C différent → `/findmatch` d’A doit proposer B en priorité.
+- Flow accept/pass/reject avec double opt-in.
+- DM fermées pour B : vérifier fallback.
+- Proactive : activer loop, vérifier qu’utilisateurs éligibles reçoivent suggestions.
+- Manuel : A suggère C via modal, bot propose anonymisé à C.
+
+DOCUMENTATION & OPTIONS
+- README doit expliquer comment configurer DISCORD_TOKEN (Replit Secrets), installer dépendances, lancer bot, variables configurables (weights, sigma, proactive params), et comment modifier synonyms map.
+- Inclure un fichier JSON de templates textes (embeds, erreurs) modifiable.
+
+CONSIGNES À L’ASSISTANT REPLIT
+- Génère les fichiers listés avec code complet, commenté et prêts à coller. Ne mets aucun token.
+- Implémente handlers buttons et la logique DB CRUD pour `matches` et `suggestions`.
+- Par défaut active double opt-in et proactive disabled (configurable).
+- Fournis un court plan de tests manuels à la fin (liste de commandes + résultats attendus).

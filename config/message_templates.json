@@ -1,0 +1,152 @@
+{
+  "matching": {
+    "found_match": {
+      "title": "💖 Correspondance trouvée !",
+      "description": "Voici une personne qui pourrait vous intéresser :",
+      "color": "pink"
+    },
+    "proactive_suggestion": {
+      "title": "💌 Suggestion automatique !",
+      "description": "J'ai trouvé quelqu'un qui pourrait vous intéresser :",
+      "color": "purple"
+    },
+    "pending_notification": {
+      "title": "💌 Quelqu'un s'intéresse à vous !",
+      "description": "Une personne correspondant à vos critères souhaite se connecter.",
+      "color": "blue"
+    },
+    "match_reveal": {
+      "title": "🎉 Match confirmé !",
+      "description": "Voici les détails complets de votre correspondance :",
+      "color": "green"
+    }
+  },
+  "errors": {
+    "no_profile": {
+      "message": "❌ Vous devez créer un profil avant de chercher des correspondances.\nUtilisez `/createprofile` pour commencer !",
+      "ephemeral": true
+    },
+    "no_matches": {
+      "message": "😔 **Aucune correspondance trouvée pour le moment.**\n\nEssayez de diversifier vos intérêts ou revenez plus tard !\nVous pouvez aussi suggérer un candidat spécifique.",
+      "ephemeral": true
+    },
+    "dm_failed": {
+      "message": "🔒 **Impossible d'envoyer en privé**\n\nActivez les messages privés pour recevoir plus de détails !",
+      "ephemeral": true
+    },
+    "service_unavailable": {
+      "message": "❌ Service de matching temporairement indisponible.",
+      "ephemeral": true
+    }
+  },
+  "success": {
+    "match_accepted": {
+      "message": "✅ **Intérêt exprimé !**\n\nJ'ai envoyé une notification anonyme à cette personne.\nSi elle accepte aussi, vous serez mis en contact ! 🤞",
+      "ephemeral": true
+    },
+    "suggestion_sent": {
+      "message": "✅ **Correspondance trouvée !**\nScore de compatibilité : {score}\nConsultez vos messages privés pour voir les détails. 📩",
+      "ephemeral": true
+    },
+    "proactive_disabled": {
+      "message": "⚙️ **Suggestions automatiques désactivées.**\nVous pouvez toujours utiliser `/findmatch` manuellement.",
+      "ephemeral": true
+    }
+  },
+  "buttons": {
+    "match_actions": [
+      {
+        "label": "✅ Accepter",
+        "style": "green",
+        "custom_id": "match_accept:{candidate_id}:{nonce}"
+      },
+      {
+        "label": "👁️ Voir profil",
+        "style": "gray", 
+        "custom_id": "match_view:{candidate_id}:{nonce}"
+      },
+      {
+        "label": "⏭️ Passer",
+        "style": "secondary",
+        "custom_id": "match_next:{candidate_id}:{nonce}"
+      },
+      {
+        "label": "🚨 Signaler",
+        "style": "red",
+        "custom_id": "match_report:{candidate_id}:{nonce}"
+      }
+    ],
+    "proactive_actions": [
+      {
+        "label": "👁️ Voir détails",
+        "style": "gray",
+        "custom_id": "pro_view:{candidate_id}:{nonce}"
+      },
+      {
+        "label": "✅ Intéressé(e)",
+        "style": "green",
+        "custom_id": "pro_accept:{candidate_id}:{nonce}"
+      },
+      {
+        "label": "⏭️ Passer",
+        "style": "secondary",
+        "custom_id": "pro_next:{candidate_id}:{nonce}"
+      },
+      {
+        "label": "🚨 Signaler",
+        "style": "red",
+        "custom_id": "pro_report:{candidate_id}:{nonce}"
+      },
+      {
+        "label": "⚙️ Désactiver suggestions",
+        "style": "secondary",
+        "custom_id": "pro_opt_out:{candidate_id}:{nonce}"
+      }
+    ],
+    "pending_actions": [
+      {
+        "label": "👁️ Voir profil",
+        "style": "gray",
+        "custom_id": "pending_view:{requester_id}:{nonce}"
+      },
+      {
+        "label": "✅ Accepter",
+        "style": "green",
+        "custom_id": "pending_accept:{requester_id}:{nonce}"
+      },
+      {
+        "label": "❌ Refuser",
+        "style": "red",
+        "custom_id": "pending_decline:{requester_id}:{nonce}"
+      }
+    ]
+  },
+  "fields": {
+    "profile_anon": {
+      "name": "👤 Profil anonyme",
+      "template": "**Âge :** {age_range}\n**Pronoms :** {pronoms}"
+    },
+    "compatibility": {
+      "name": "🎯 Compatibilité", 
+      "template": "**Score :** {score}\n**Algorithme :** IA avancée"
+    },
+    "interests": {
+      "name": "🎨 Intérêts",
+      "template": "{interests_list}"
+    },
+    "description": {
+      "name": "💭 Description",
+      "template": "{truncated_description}"
+    },
+    "contact": {
+      "name": "📞 Contact",
+      "template": "Vous pouvez maintenant contacter <@{user_id}> directement !"
+    }
+  },
+  "footers": {
+    "anonymized": "💡 Profil anonymisé pour votre sécurité et confidentialité",
+    "proactive": "💡 Suggestion automatique • Profil anonymisé", 
+    "safety": "💡 Soyez respectueux et bienveillant dans vos échanges",
+    "algorithm": "💡 Score calculé par algorithme IA avec IDF et fuzzy matching"
+  }
+}

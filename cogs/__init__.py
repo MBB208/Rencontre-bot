@@ -1,0 +1,1 @@
+# Package pour les cogs du Matching Bot Discord

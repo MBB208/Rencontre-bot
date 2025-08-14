@@ -1,0 +1,103 @@
+Objectif :
+Crée un projet Python complet et prêt à utiliser sur Replit pour un "Matching Bot" Discord. Génère tous les fichiers listés, avec code prêt à l'emploi, commentaires explicatifs et instructions de test.
+
+Contraintes générales :
+- Ne mets **jamais** de token dans le code. Utilise la variable d'environnement DISCORD_TOKEN (Replit Secrets).
+- Code asynchrone (aiosqlite pour la DB).
+- Compatible Python 3.10+.
+- Respecte la confidentialité : aucune donnée sensible n'est collectée (pas de numéros, adresses...).
+
+Structure à créer (exactement) :
+matching-bot/
+├── bot.py
+├── requirements.txt
+├── README.md
+├── .replit
+├── cogs/
+│   ├── profile.py
+│   ├── match.py
+│   ├── utils.py
+│   └── admin.py
+├── database/
+│   └── profiles.db   # (doit être créé automatiquement au 1er run)
+└── data/
+    └── backups/
+
+Fichiers et comportements demandés :
+
+1) requirements.txt
+- Contenu :
+  discord.py>=2.2.0
+  aiosqlite
+  python-dotenv
+
+2) .replit
+- Contenu simple : run = "python3 bot.py"
+
+3) bot.py
+- Doit :
+  - Récupérer TOKEN via os.getenv("DISCORD_TOKEN").
+  - Créer une instance commands.Bot avec intents par défaut.
+  - Charger les cogs asynchronement (liste COGS).
+  - Faire await bot.tree.sync() dans on_ready() et imprimer l'id du bot.
+  - Gérer proprement l'absence de token (message d'erreur utile).
+  - Avoir un main() asynchrone qui charge les cogs et démarre le bot.
+
+4) cogs/utils.py
+- Doit exposer :
+  - db_instance : classe DB asynchrone utilisant aiosqlite, avec connect() qui crée la table profiles si nécessaire.
+  - cosine_similarity(a,b) : fonction pour vecteurs (sécurité pour normes nulles).
+  - Utilities pour sérialiser/désérialiser intérêts (JSON).
+- Lors du démarrage, utils doit appeler db_instance.connect().
+
+5) cogs/profile.py
+- Slash commands :
+  - /createprofile prenom pronoms age interets description
+    - Parse interets (CSV -> liste), stocke JSON.
+    - Définit vector par défaut [0,0,0,0,0].
+    - Enregistre avatar_url = interaction.user.display_avatar.url (ou None).
+    - Vérifie profil existant (retourne message ephemeral si déjà existant).
+  - /deleteprofile
+    - Supprime la ligne et répond en ephemeral.
+  - Chaque commande doit utiliser les bonnes bonnes pratiques : réponses ephemeral, try/except pour DB.
+- Code bien commenté.
+
+6) cogs/match.py
+- /findmatch
+  - Récupère le profil de l'appelant.
+  - Parcourt tous les profils sauf l'appelant, applique filtrage mineur↔majeur (exclure).
+  - Calcule score basé sur intérêts communs + cosine_similarity(vector).
+  - Trie, prend le top, envoie **en DM** un message anonymisé (pas de nom complet, pas d'avatar).
+  - Indique comment accepter le match (ex: `/acceptmatch <user_id>`) et comment passer au suivant.
+  - Si aucun match, renvoie message ephemeral.
+
+7) cogs/admin.py
+- Commandes admin basiques (restreintes aux propriétaires ou rôles spécifiques) :
+  - /export_profiles -> exporte profiles en JSON dans data/backups/
+  - /list_profiles -> affiche count / premiers X profils (ephemeral)
+
+8) database/profiles.db
+- Doit être créé automatiquement si absent ; structure table profiles :
+  user_id TEXT PRIMARY KEY,
+  prenom TEXT,
+  pronoms TEXT,
+  age INTEGER,
+  interets TEXT,    -- JSON
+  description TEXT,
+  avatar_url TEXT,
+  vector TEXT       -- JSON
+
+9) README.md
+- Instructions de configuration (Replit Secrets -> DISCORD_TOKEN)
+- Installation pip install -r requirements.txt
+- Lancer python3 bot.py
+- Tests rapides : comment créer profil, supprimer, tester findmatch
+- Note sécurité : ne pas committer tokens
+
+Livrables attendus :
+- Tous les fichiers complets avec code fonctionnel et commentaires.
+- Après génération, affiche un petit plan de tests manuels (quelques commandes à lancer) et un exemple de sortie attendue.
+- Ne pas exécuter ou inclure de token.
+
+Remarque finale :
+Sois pragmatique — le code n'a pas besoin d'optimisations ML avancées mais doit être propre, modulaire et prêt à être copié-collé sur Replit. Merci.

@@ -1,0 +1,3 @@
+2025-08-13 23:53:28 - root - INFO - Logging system initialized
+2025-08-13 23:53:28 - __main__ - INFO - Starting Discord Bot...
+2025-08-13 23:53:28 - __main__ - ERROR - Fatal error occurred: DISCORD_TOKEN environment variable is required
