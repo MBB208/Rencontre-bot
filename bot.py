@@ -1,3 +1,4 @@
+
 import discord
 from discord.ext import commands
 import os
@@ -25,9 +26,9 @@ COGS = [
     'cogs.setup',
     'cogs.profile', 
     'cogs.admin',
-    # Nouveaux cogs avancés (remplacent cogs.match)
-    'cogs.match_advanced',
-    'cogs.match_proactive'
+    'cogs.match_advanced'
+    # 'cogs.match' # Désactivé - conflit avec match_advanced
+    # 'cogs.match_proactive' # Désactivé pour l'instant
 ]
 
 @bot.event

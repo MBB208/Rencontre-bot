@@ -1,8 +1,8 @@
+
 import discord
 from discord.ext import commands
 from discord import app_commands
-from .utils import db_instance, deserialize_interests, deserialize_vector, cosine_similarity, calculate_interests_similarity
-import json
+from .utils import db_instance, deserialize_interests, calculate_interests_similarity
 
 class Match(commands.Cog):
     """Cog pour la logique de matching entre utilisateurs"""
@@ -16,16 +16,24 @@ class Match(commands.Cog):
         user_id = str(interaction.user.id)
         
         try:
+            # Vérifier que la connexion DB existe
+            if not db_instance.connection:
+                await interaction.response.send_message(
+                    "❌ Erreur de base de données. Veuillez réessayer.",
+                    ephemeral=True
+                )
+                return
+
             # Récupérer le profil de l'utilisateur
-            async with db_instance.connection.execute(
-                "SELECT * FROM profiles WHERE user_id = ?", 
+            cursor = await db_instance.connection.execute(
+                "SELECT user_id, prenom, pronoms, age, interets, description FROM profiles WHERE user_id = ?", 
                 (user_id,)
-            ) as cursor:
-                user_profile = await cursor.fetchone()
+            )
+            user_profile = await cursor.fetchone()
             
             if not user_profile:
                 await interaction.response.send_message(
-                    "❌ Vous devez créer un profil avant de chercher des correspondances.\n"
+                    "❌ **Vous devez créer un profil avant de chercher des correspondances.**\n\n"
                     "Utilisez `/createprofile` pour commencer !",
                     ephemeral=True
                 )
@@ -34,14 +42,13 @@ class Match(commands.Cog):
             # Extraire les données du profil utilisateur
             user_age = user_profile[3]
             user_interests = deserialize_interests(user_profile[4])
-            user_vector = deserialize_vector(user_profile[7])
             
             # Récupérer tous les autres profils (excluant l'utilisateur actuel)
-            async with db_instance.connection.execute(
-                "SELECT * FROM profiles WHERE user_id != ?", 
+            cursor = await db_instance.connection.execute(
+                "SELECT user_id, prenom, pronoms, age, interets, description FROM profiles WHERE user_id != ?", 
                 (user_id,)
-            ) as cursor:
-                all_profiles = await cursor.fetchall()
+            )
+            all_profiles = await cursor.fetchall()
             
             if not all_profiles:
                 await interaction.response.send_message(
@@ -56,10 +63,8 @@ class Match(commands.Cog):
             matches = []
             
             for profile in all_profiles:
-                profile_user_id = profile[0]
                 profile_age = profile[3]
                 profile_interests = deserialize_interests(profile[4])
-                profile_vector = deserialize_vector(profile[7])
                 
                 # FILTRAGE STRICT : Jamais mélanger mineurs et majeurs
                 user_is_minor = user_age < 18
@@ -78,24 +83,21 @@ class Match(commands.Cog):
                 if profile_age < 13 or profile_age > 30:
                     continue
                 
-                # Calculer le score basé sur les intérêts communs
+                # Calculer le score basé uniquement sur les intérêts communs
                 interests_score = calculate_interests_similarity(user_interests, profile_interests)
                 
-                # Calculer la similarité cosinus des vecteurs
-                vector_score = cosine_similarity(user_vector, profile_vector)
-                
-                # Score final (pondération: 70% intérêts, 30% vecteur)
-                final_score = (interests_score * 0.7) + (vector_score * 0.3)
+                # Score final (pondération: 100% intérêts)
+                final_score = interests_score
                 
                 # Ajouter à la liste si score significatif
-                if final_score > 0.1:  # Seuil minimum
+                if final_score > 0.05:  # Seuil minimum réduit
                     matches.append({
-                        'user_id': profile_user_id,
+                        'user_id': profile[0],
                         'prenom': profile[1],
                         'pronoms': profile[2],
                         'age': profile_age,
                         'interests': profile_interests,
-                        'description': profile[5],
+                        'description': profile[5] if profile[5] else "Pas de description",
                         'score': final_score
                     })
             
@@ -108,114 +110,17 @@ class Match(commands.Cog):
                 )
                 return
             
-            # Trier par score décroissant et prendre le meilleur
+            # Trier par score décroissant
             matches.sort(key=lambda x: x['score'], reverse=True)
-            best_match = matches[0]
             
-            # RÉPONDRE IMMÉDIATEMENT à l'interaction pour éviter l'expiration
-            await interaction.response.send_message(
-                "🔍 **Recherche de correspondance...**\n\n"
-                f"Correspondance trouvée avec un score de {best_match['score']:.0%} ! "
-                "Je vous envoie les détails en message privé. 📩",
-                ephemeral=True
-            )
+            # Afficher le premier match
+            await self.show_match(interaction, matches, 0, user_interests)
             
-            # Puis traiter l'envoi du DM (après avoir répondu à l'interaction)
-            try:
-                dm_channel = await interaction.user.create_dm()
-                
-                # Calculer les intérêts communs
-                common_interests = list(set(user_interests) & set(best_match['interests']))
-                common_interests_str = ", ".join(common_interests[:5])  # Max 5 intérêts
-                if len(common_interests) > 5:
-                    common_interests_str += f" (+{len(common_interests)-5} autres)"
-                
-                embed = discord.Embed(
-                    title="💖 Correspondance trouvée !",
-                    description="Voici une personne qui pourrait vous intéresser :",
-                    color=discord.Color.pink()
-                )
-                
-                embed.add_field(
-                    name="👤 Profil", 
-                    value=f"**Prénom :** {best_match['prenom']}\n"
-                          f"**Pronoms :** {best_match['pronoms']}\n"
-                          f"**Âge :** {best_match['age']} ans", 
-                    inline=True
-                )
-                
-                embed.add_field(
-                    name="🎯 Compatibilité", 
-                    value=f"**Score :** {best_match['score']:.0%}\n"
-                          f"**Intérêts communs :** {len(common_interests)}", 
-                    inline=True
-                )
-                
-                embed.add_field(
-                    name="💭 Description", 
-                    value=best_match['description'][:200] + ('...' if len(best_match['description']) > 200 else ''), 
-                    inline=False
-                )
-                
-                if common_interests:
-                    embed.add_field(
-                        name="🤝 Vos intérêts communs", 
-                        value=common_interests_str, 
-                        inline=False
-                    )
-                
-                embed.add_field(
-                    name="🎯 Répondre à cette correspondance", 
-                    value="• Réagissez ✅ pour **accepter** cette correspondance\n"
-                          "• Réagissez ❌ pour **refuser** et passer au suivant\n"
-                          "• Utilisez `/findmatch` à nouveau pour d'autres suggestions", 
-                    inline=False
-                )
-                
-                embed.set_footer(text="💡 Ce profil a été anonymisé pour votre sécurité")
-                
-                match_message = await dm_channel.send(embed=embed)
-                
-                # Ajouter les réactions pour accepter/refuser
-                await match_message.add_reaction('✅')
-                await match_message.add_reaction('❌')
-                
-                # Sauvegarder l'info du match pour traiter les réactions
-                await self.save_match_proposal(
-                    interaction.user.id, 
-                    best_match['user_id'], 
-                    match_message.id,
-                    best_match['score']
-                )
-                
-                # Envoyer un message de suivi si possible
-                try:
-                    await interaction.followup.send(
-                        "✅ **Message privé envoyé avec succès !**",
-                        ephemeral=True
-                    )
-                except:
-                    pass  # Ignore les erreurs de followup
-                    
-            except discord.Forbidden:
-                # Si l'envoi en DM échoue, envoyer un followup
-                try:
-                    # Recalculer common_interests au cas où
-                    common_interests_fallback = list(set(user_interests) & set(best_match['interests']))
-                    await interaction.followup.send(
-                        "🔒 **Impossible d'envoyer en privé**\n\n"
-                        f"**Correspondance trouvée** (Score: {best_match['score']:.0%})\n"
-                        f"**Âge :** {best_match['age']} ans\n"
-                        f"**Intérêts communs :** {len(common_interests_fallback)}\n\n"
-                        "Activez les messages privés pour recevoir plus de détails !",
-                        ephemeral=True
-                    )
-                except:
-                    pass  # Ignore les erreurs de followup
-                
         except Exception as e:
-            print(f"❌ Erreur lors de la recherche de match pour {user_id}: {e}")
-            # Vérifier si l'interaction a déjà été répondue
+            print(f"❌ Erreur findmatch pour {user_id}: {e}")
+            import traceback
+            traceback.print_exc()
+            
             if not interaction.response.is_done():
                 await interaction.response.send_message(
                     "❌ Une erreur s'est produite lors de la recherche de correspondances. "
@@ -223,159 +128,205 @@ class Match(commands.Cog):
                     ephemeral=True
                 )
     
-    async def save_match_proposal(self, requester_id: int, target_id: str, message_id: int, score: float):
-        """Sauvegarder une proposition de match pour traitement des réactions"""
+    async def show_match(self, interaction, matches, index, user_interests):
+        """Afficher un match spécifique avec navigation"""
         try:
-            # Créer table si elle n'existe pas
-            await db_instance.connection.execute("""
-                CREATE TABLE IF NOT EXISTS match_proposals (
-                    message_id TEXT PRIMARY KEY,
-                    requester_id TEXT NOT NULL,
-                    target_id TEXT NOT NULL,
-                    score REAL NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    status TEXT DEFAULT 'pending'
-                )
-            """)
-            
-            await db_instance.connection.execute("""
-                INSERT OR REPLACE INTO match_proposals (message_id, requester_id, target_id, score)
-                VALUES (?, ?, ?, ?)
-            """, (str(message_id), str(requester_id), target_id, score))
-            
-            await db_instance.connection.commit()
-            
-        except Exception as e:
-            print(f"❌ Erreur sauvegarde match proposal: {e}")
-    
-    @commands.Cog.listener()
-    async def on_reaction_add(self, reaction, user):
-        """Gérer les réactions sur les messages de correspondance"""
-        # Ignorer les réactions du bot
-        if user.bot:
-            return
-            
-        # Vérifier si c'est une réaction sur un message de match
-        try:
-            async with db_instance.connection.execute(
-                "SELECT requester_id, target_id, score FROM match_proposals WHERE message_id = ? AND status = 'pending'",
-                (str(reaction.message.id),)
-            ) as cursor:
-                match_data = await cursor.fetchone()
-            
-            if not match_data:
-                return  # Pas un message de match ou déjà traité
-            
-            requester_id, target_id, score = match_data
-            
-            # Vérifier que c'est le bon utilisateur qui réagit
-            if str(user.id) != requester_id:
+            if index >= len(matches):
+                msg = ("😔 **Plus de correspondances disponibles**\n\n"
+                       "Vous avez vu tous les profils compatibles. "
+                       "Utilisez à nouveau `/findmatch` plus tard !")
+                
+                if interaction.response.is_done():
+                    await interaction.edit_original_response(content=msg, embed=None, view=None)
+                else:
+                    await interaction.response.send_message(msg, ephemeral=True)
                 return
             
-            if str(reaction.emoji) == '✅':
-                # Accepter la correspondance
-                await self.handle_match_acceptance(user, target_id, score, reaction.message.id)
-            elif str(reaction.emoji) == '❌':
-                # Refuser la correspondance
-                await self.handle_match_rejection(user, target_id, reaction.message.id)
+            current_match = matches[index]
+            
+            # Trouver les intérêts en commun
+            common_interests = list(set(user_interests) & set(current_match['interests']))
+            common_text = ", ".join(common_interests[:3]) if common_interests else "Découvrez vos affinités"
+            if len(common_interests) > 3:
+                common_text += f" (+{len(common_interests)-3} autres)"
+            
+            # Afficher le match avec boutons d'action
+            embed = discord.Embed(
+                title=f"🔍 Correspondance {index + 1}/{len(matches)}",
+                description=f"Voici une personne qui pourrait vous intéresser :",
+                color=discord.Color.green()
+            )
+            embed.add_field(name="👤 Prénom", value=current_match['prenom'], inline=True)
+            embed.add_field(name="🏷️ Pronoms", value=current_match['pronoms'], inline=True)
+            embed.add_field(name="🎂 Âge", value=f"{current_match['age']} ans", inline=True)
+            embed.add_field(name="💖 Compatibilité", value=f"{current_match['score']:.0%}", inline=True)
+            embed.add_field(name="🎯 En commun", value=common_text, inline=True)
+            
+            description = current_match['description']
+            if len(description) > 150:
+                description = description[:150] + "..."
+                
+            embed.add_field(name="💭 Description", value=description, inline=False)
+            
+            # Créer la vue avec boutons
+            view = MatchView(
+                current_match['user_id'], 
+                str(interaction.user.id), 
+                current_match['prenom'],
+                matches,
+                index,
+                user_interests,
+                self
+            )
+            
+            if interaction.response.is_done():
+                await interaction.edit_original_response(embed=embed, view=view)
+            else:
+                await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
                 
         except Exception as e:
-            print(f"❌ Erreur gestion réaction: {e}")
+            print(f"❌ Erreur show_match: {e}")
+            import traceback
+            traceback.print_exc()
+
+class MatchView(discord.ui.View):
+    """Vue avec boutons pour accepter/refuser un match"""
     
-    async def handle_match_acceptance(self, accepter_user, target_id: str, score: float, message_id: int):
-        """Gérer l'acceptation d'une correspondance"""
+    def __init__(self, target_user_id, requester_id, target_name, matches=None, current_index=0, user_interests=None, match_cog=None):
+        super().__init__(timeout=300)  # 5 minutes
+        self.target_user_id = target_user_id
+        self.requester_id = requester_id
+        self.target_name = target_name
+        self.matches = matches or []
+        self.current_index = current_index
+        self.user_interests = user_interests or []
+        self.match_cog = match_cog
+    
+    @discord.ui.button(label="💖 Accepter", style=discord.ButtonStyle.success)
+    async def accept_match(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Accepter le match proposé"""
         try:
-            # Récupérer les profils
+            # Récupérer les profils complets
             async with db_instance.connection.execute(
-                "SELECT prenom FROM profiles WHERE user_id = ?", 
-                (str(accepter_user.id),)
+                "SELECT prenom, pronoms, age, description, interets FROM profiles WHERE user_id = ?", 
+                (self.requester_id,)
             ) as cursor:
-                accepter_profile = await cursor.fetchone()
+                requester_profile = await cursor.fetchone()
             
             async with db_instance.connection.execute(
-                "SELECT prenom FROM profiles WHERE user_id = ?", 
-                (target_id,)
+                "SELECT prenom, pronoms, age, description, interets FROM profiles WHERE user_id = ?", 
+                (self.target_user_id,)
             ) as cursor:
                 target_profile = await cursor.fetchone()
             
-            if not accepter_profile or not target_profile:
+            if not requester_profile or not target_profile:
+                await interaction.response.send_message(
+                    "❌ Erreur lors de la récupération des profils.",
+                    ephemeral=True
+                )
                 return
             
-            # Marquer le match comme accepté
-            await db_instance.connection.execute(
-                "UPDATE match_proposals SET status = 'accepted' WHERE message_id = ?",
-                (str(message_id),)
-            )
-            await db_instance.connection.commit()
-            
-            # Notifier l'autre utilisateur
+            # Envoyer notification détaillée à la personne ciblée
             try:
-                target_user = await self.bot.fetch_user(int(target_id))
+                target_user = await interaction.client.fetch_user(int(self.target_user_id))
                 if target_user:
+                    # Créer le DM channel
                     dm_channel = await target_user.create_dm()
                     
-                    embed = discord.Embed(
-                        title="💝 Correspondance acceptée !",
-                        description=f"**{accepter_profile[0]}** a accepté votre correspondance !",
-                        color=discord.Color.green()
+                    # Corriger l'ordre des indices pour les intérêts et description
+                    interests_text = requester_profile[4] if requester_profile[4] else "Aucun intérêt spécifié"
+                    description_text = requester_profile[3] if requester_profile[3] else "Aucune description"
+                    
+                    embed_target = discord.Embed(
+                        title="💌 Quelqu'un s'intéresse à vous !",
+                        description=f"**{requester_profile[0]}** souhaite faire votre connaissance !",
+                        color=discord.Color.blue()
                     )
+                    embed_target.add_field(name="👤 Prénom", value=requester_profile[0], inline=True)
+                    embed_target.add_field(name="🏷️ Pronoms", value=requester_profile[1], inline=True)
+                    embed_target.add_field(name="🎂 Âge", value=f"{requester_profile[2]} ans", inline=True)
+                    embed_target.add_field(name="🎯 Intérêts", value=interests_text[:100] + ("..." if len(interests_text) > 100 else ""), inline=False)
+                    embed_target.add_field(name="💭 Description", value=description_text[:150] + ("..." if len(description_text) > 150 else ""), inline=False)
+                    embed_target.add_field(name="📩 Pour répondre", value=f"Contactez directement <@{self.requester_id}> si vous êtes intéressé(e) !", inline=False)
+                    embed_target.set_footer(text="💡 Soyez respectueux et bienveillant dans vos échanges")
                     
-                    embed.add_field(
-                        name="🎉 Félicitations !",
-                        value="Vous pouvez maintenant entrer en contact avec cette personne.\n"
-                              "Nous vous encourageons à faire connaissance dans un environnement sûr !",
-                        inline=False
-                    )
+                    await dm_channel.send(embed=embed_target)
+                    print(f"✅ Notification envoyée à {self.target_user_id} ({target_profile[0]})")
                     
-                    embed.add_field(
-                        name="🛡️ Conseils de sécurité",
-                        value="• Restez respectueux dans vos échanges\n"
-                              "• Ne partagez pas d'informations personnelles sensibles\n" 
-                              "• Signalez tout comportement inapproprié",
-                        inline=False
-                    )
-                    
-                    await dm_channel.send(embed=embed)
-                    
-            except Exception as notification_error:
-                print(f"❌ Erreur notification acceptation: {notification_error}")
+            except discord.Forbidden:
+                print(f"❌ Impossible d'envoyer DM à {self.target_user_id} (DMs fermés)")
+            except discord.NotFound:
+                print(f"❌ Utilisateur {self.target_user_id} introuvable")
+            except Exception as e:
+                print(f"❌ Erreur envoi DM à {self.target_user_id}: {e}")
             
-            # Confirmer à celui qui a accepté
-            try:
-                dm_channel = await accepter_user.create_dm()
-                await dm_channel.send(
-                    f"✅ **Correspondance acceptée !**\n\n"
-                    f"J'ai notifié **{target_profile[0]}** que vous avez accepté la correspondance. "
-                    f"Bonne chance pour la suite ! 🍀"
-                )
-            except:
-                pass
-                
+            # Réponse dans l'interaction
+            await interaction.response.send_message(
+                f"💖 **Match accepté avec {target_profile[0]} !**\n\n"
+                f"✅ J'ai envoyé une notification détaillée à cette personne.\n"
+                f"🤞 Si l'intérêt est mutuel, vous serez contacté(e) directement !",
+                ephemeral=True
+            )
+            
         except Exception as e:
-            print(f"❌ Erreur handle_match_acceptance: {e}")
+            print(f"❌ Erreur accept_match: {e}")
+            await interaction.response.send_message(
+                "❌ Une erreur s'est produite. Veuillez réessayer.",
+                ephemeral=True
+            )
+        
+        self.stop()
     
-    async def handle_match_rejection(self, rejecter_user, target_id: str, message_id: int):
-        """Gérer le refus d'une correspondance"""
+    @discord.ui.button(label="👎 Suivant", style=discord.ButtonStyle.secondary)
+    async def next_match(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Passer au match suivant"""
+        if self.matches and self.match_cog:
+            next_index = self.current_index + 1
+            if next_index < len(self.matches):
+                await self.match_cog.show_match(interaction, self.matches, next_index, self.user_interests)
+            else:
+                await interaction.response.send_message(
+                    "😔 **Plus de correspondances disponibles**\n\n"
+                    "Vous avez vu tous les profils compatibles. "
+                    "Utilisez à nouveau `/findmatch` plus tard pour de nouveaux profils !",
+                    ephemeral=True
+                )
+        else:
+            await interaction.response.send_message(
+                "⏭️ **Match ignoré.**\n\n"
+                "Utilisez à nouveau `/findmatch` pour voir d'autres correspondances !",
+                ephemeral=True
+            )
+        self.stop()
+    
+    @discord.ui.button(label="🚨 Signaler", style=discord.ButtonStyle.danger)
+    async def report_user(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Signaler un profil problématique"""
         try:
-            # Marquer le match comme refusé
+            # Enregistrer le signalement
             await db_instance.connection.execute(
-                "UPDATE match_proposals SET status = 'rejected' WHERE message_id = ?",
-                (str(message_id),)
+                "INSERT INTO reports (reporter_id, reported_id, reason, timestamp) VALUES (?, ?, ?, datetime('now'))",
+                (self.requester_id, self.target_user_id, "Signalement via match")
             )
             await db_instance.connection.commit()
             
-            # Confirmer à celui qui a refusé
-            try:
-                dm_channel = await rejecter_user.create_dm()
-                await dm_channel.send(
-                    "❌ **Correspondance refusée.**\n\n"
-                    "Utilisez `/findmatch` à nouveau pour voir d'autres suggestions !"
-                )
-            except:
-                pass
-                
+            print(f"🚨 SIGNALEMENT: {self.requester_id} a signalé {self.target_user_id} ({self.target_name})")
+            
+            await interaction.response.send_message(
+                f"🚨 **Profil signalé**\n\n"
+                f"**Utilisateur signalé :** {self.target_name}\n\n"
+                f"✅ Merci de nous avoir alertés. Ce profil sera examiné par notre équipe de modération.",
+                ephemeral=True
+            )
+            
         except Exception as e:
-            print(f"❌ Erreur handle_match_rejection: {e}")
+            print(f"❌ Erreur signalement: {e}")
+            await interaction.response.send_message(
+                "❌ Erreur lors du signalement. Veuillez réessayer.",
+                ephemeral=True
+            )
+        
+        self.stop()
 
 async def setup(bot):
     """Fonction obligatoire pour charger le cog"""

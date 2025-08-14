@@ -1,191 +1,291 @@
-# Matching Bot Discord
 
-Un bot Discord de matching sophistiqué qui permet aux utilisateurs de créer des profils et de trouver des correspondances basées sur leurs intérêts communs.
+<old_str># Discord Matching Bot
 
-## 🌟 Fonctionnalités
+Un bot Discord sophistiqué pour connecter des utilisateurs basé sur leurs intérêts communs.
 
-- 🏷️ **Gestion de Profils**: Création, suppression et consultation de profils personnalisés
-- 💖 **Système de Matching**: Algorithme intelligent basé sur les intérêts communs et la similarité vectorielle  
-- 🔒 **Sécurité & Confidentialité**: Filtrage d'âge, messages anonymisés, aucune donnée sensible collectée
-- 📱 **Interface Moderne**: Commandes slash Discord avec interface intuitive
-- 🗄️ **Base de Données Asynchrone**: Utilisation d'aiosqlite pour des performances optimales
-- 🛡️ **Administration**: Outils d'export, statistiques et gestion pour les administrateurs
+## Fonctionnalités
 
-## 🚀 Installation sur Replit
+- Création de profils personnalisés
+- Algorithme de matching intelligent
+- Sécurité et modération intégrées
+- Interface intuitive avec boutons Discord
 
-### 1. Configuration du Token Discord
+## Installation
 
-1. Allez sur le [Discord Developer Portal](https://discord.com/developers/applications)
-2. Créez une nouvelle application et donnez-lui un nom
-3. Allez dans la section "Bot" et cliquez sur "Add Bot"
-4. Copiez le token du bot
-5. Dans "Privileged Gateway Intents", activez:
-   - Message Content Intent
-   - Server Members Intent (optionnel)
-6. Dans "OAuth2" > "URL Generator":
-   - **Scopes**: Cochez `bot` et `applications.commands`
-   - **Bot Permissions**: Cochez au minimum :
-     - Send Messages
-     - Use Slash Commands
-     - Read Message History
-     - Send Messages in Threads
-     - Embed Links
-     - Read Messages/View Channels
-7. **IMPORTANT**: Copiez l'URL générée et utilisez-la pour inviter le bot sur votre serveur
-   - Sans cette invitation, les utilisateurs ne pourront pas utiliser le bot
-   - L'URL ressemble à : `https://discord.com/oauth2/authorize?client_id=VOTRE_BOT_ID&permissions=XXXXX&scope=bot%20applications.commands`
+1. Cloner le projet
+2. Installer les dépendances : `pip install -r requirements.txt`
+3. Configurer le token Discord dans les variables d'environnement
+4. Lancer avec `python bot.py`
 
-### 2. Configuration sur Replit
+## Utilisation
 
-1. Dans votre projet Replit, allez dans l'onglet "Secrets" (🔒)
-2. Ajoutez un nouveau secret:
-   - **Clé**: `DISCORD_TOKEN`
-   - **Valeur**: Votre token Discord (celui copié à l'étape 1.4)
+- `/createprofile` - Créer un profil
+- `/findmatch` - Trouver des correspondances
+- `/viewprofile` - Voir son profil
+- `/deleteprofile` - Supprimer son profil
 
-### 3. Installation des dépendances
+## Sécurité
 
-Les dépendances seront installées automatiquement au premier lancement:
-- `discord.py>=2.2.0`
-- `aiosqlite` 
-- `python-dotenv`
+Le bot applique une séparation stricte entre mineurs et majeurs et respecte la confidentialité des utilisateurs.</old_str>
+<new_str># 🌟 Discord Matching Bot - Système de Rencontres Intelligent
 
-### 4. Lancement
+Un bot Discord avancé qui connecte des utilisateurs basé sur leurs intérêts communs, utilisant un algorithme de matching sophistiqué avec un système de sécurité complet.
 
-Cliquez simplement sur le bouton "Run" ou exécutez:
+## ✨ Fonctionnalités Principales
+
+### 🔍 **Système de Matching Avancé**
+- **Algorithme intelligent** avec normalisation des synonymes (musique = music)
+- **Navigation fluide** entre plusieurs correspondances
+- **Score de compatibilité** affiché en pourcentage
+- **Filtrage automatique** par tranches d'âge
+- **Interface interactive** avec boutons Discord
+
+### 👤 **Gestion de Profils Complète**
+- **Création guidée** avec validation des données
+- **Modification en temps réel** de tous les champs
+- **Conseils personnalisés** pour optimiser son profil
+- **Suppression sécurisée** avec effacement complet
+
+### 🛡️ **Sécurité & Modération**
+- **Séparation stricte** mineurs (13-17) / majeurs (18+)
+- **Écart d'âge limité** à 8 ans maximum
+- **Système de signalement** intégré
+- **Modération administrative** avec outils dédiés
+- **Anonymisation** des données jusqu'à acceptation mutuelle
+
+### 🎯 **Expérience Utilisateur Optimisée**
+- **Double opt-in** - révélation mutuelle après accord des deux parties
+- **Navigation intuitive** - passer facilement d'un profil à l'autre
+- **Guide interactif** avec boutons d'aide contextuels
+- **Feedback instantané** sur la compatibilité
+
+## 🚀 Installation et Configuration
+
+### Prérequis
+- Python 3.8+
+- Un bot Discord configuré sur le [Developer Portal](https://discord.com/developers/applications)
+
+### Installation sur Replit (Recommandé)
+1. **Fork ce template** depuis Replit
+2. **Configurer le token** :
+   - Aller dans les **Secrets** (panneau de gauche)
+   - Ajouter `DISCORD_TOKEN` avec votre token Discord
+3. **Lancer le bot** : Cliquer sur **Run**
+
+### Installation Locale
 ```bash
-python3 bot.py
+# Cloner le repository
+git clone [url-du-repo]
+cd discord-matching-bot
+
+# Installer les dépendances
+pip install -r requirements.txt
+
+# Configurer les variables d'environnement
+echo "DISCORD_TOKEN=votre_token_ici" > .env
+
+# Lancer le bot
+python bot.py
 ```
 
-## ⚠️ Problème Courant : "Je ne peux pas utiliser le bot"
+## 📖 Guide d'Utilisation
 
-Si vous ne voyez pas les commandes slash ou ne pouvez pas utiliser le bot, c'est que **le bot n'est pas invité correctement** sur votre serveur.
+### 🏗️ **Première Utilisation**
+1. **Créer son profil** : `/createprofile`
+   ```
+   Prénom: Alex
+   Pronoms: il/lui
+   Âge: 22
+   Intérêts: guitare, randonnée, photographie, cuisine, jeux vidéo
+   Description: Guitariste amateur passionné de nature et de cuisine !
+   ```
 
-### Solution Rapide
-1. Retournez sur le [Discord Developer Portal](https://discord.com/developers/applications)
-2. Sélectionnez votre application bot  
-3. Allez dans **OAuth2 > URL Generator**
-4. Cochez exactement :
-   - **Scopes** : `bot` + `applications.commands`
-   - **Permissions** : Send Messages, Use Slash Commands, Read Message History
-5. **Copiez l'URL générée** (elle commence par `https://discord.com/oauth2/authorize...`)
-6. **Ouvrez cette URL** et sélectionnez votre serveur pour inviter le bot
-7. Attendez 1-2 minutes puis tapez `/` dans un canal → Les commandes doivent apparaître
+2. **Lancer une recherche** : `/findmatch`
+3. **Naviguer entre les profils** avec les boutons
+4. **Accepter** ceux qui vous intéressent !
 
-### Vérification
-- Le bot apparaît dans la liste des membres de votre serveur
-- Quand vous tapez `/`, vous voyez 9 commandes du bot
-- Le bot a le rôle avec les bonnes permissions
-- **Important**: Toutes vos commandes sont invisibles (ephemeral) - personne d'autre ne les voit
+### ⚙️ **Commandes Disponibles**
 
-## 📋 Commandes Disponibles
+#### **Utilisateurs**
+- 🔍 `/findmatch` - Trouver des correspondances compatibles
+- 👤 `/createprofile` - Créer son profil de matching
+- 📄 `/viewprofile` - Consulter son profil actuel
+- ✏️ `/editprofile` - Modifier un élément de son profil
+- 💡 `/helpprofile` - Conseils pour un profil attractif
+- 🗑️ `/deleteprofile` - Supprimer définitivement son profil
+- 📖 `/guide` - Guide complet d'utilisation
 
-### 👤 Gestion de Profil
-- `/createprofile` - Créer votre profil de matching
-- `/viewprofile` - Voir votre profil actuel  
-- `/deleteprofile` - Supprimer votre profil
+#### **Administrateurs**
+- 📊 `/stats` - Statistiques générales du bot
+- 👥 `/list_profiles` - Lister les profils existants
+- 📤 `/export_profiles` - Export JSON des profils
+- 🚨 `/consultsignal` - Consulter les signalements
+- 🔨 `/deleteprofileadmin` - Supprimer un profil par ID
 
-### 💕 Matching
-- `/findmatch` - Trouver une correspondance (réponse par réactions ✅/❌)
+## 🧠 Algorithme de Matching
 
-### 🛡️ Administration (Réservé aux admins)
-- `/setup_channel` - Configurer le salon d'information du bot
-- `/update_info` - Mettre à jour l'embed d'information
-- `/export_profiles` - Exporter tous les profils
-- `/list_profiles` - Lister les profils existants
-- `/stats` - Statistiques du bot
+### **Étapes de Calcul**
+1. **Normalisation** - Conversion en minuscules, suppression des accents
+2. **Synonymisation** - Mapping intelligent (musique ↔ music, sport ↔ fitness)
+3. **Similarité Jaccard** - Calcul des intérêts communs avec bonus
+4. **Score final** - Pondération avec boost pour correspondances multiples
 
-## 🧪 Plan de Tests Manuels
+### **Filtres de Sécurité**
+```python
+# Séparation stricte par âge
+if user_age < 18 != profile_age < 18:
+    continue  # Jamais de mélange mineur/majeur
 
-### Test 1: Création de Profil
-1. Utilisez `/createprofile`
-2. Remplissez tous les champs:
-   - Prénom: "Alex"
-   - Pronoms: "il/elle"  
-   - Âge: 20 (entre 13 et 30 ans)
-   - Intérêts: "musique, cinéma, voyage"
-   - Description: "Passionné de cinéma et de musique"
+# Écart d'âge maximum
+if abs(user_age - profile_age) > 8:
+    continue  # Maximum 8 ans d'écart
 
-**Résultat attendu**: ✅ Confirmation de création avec résumé du profil
-
-### Test 2: Recherche de Match
-1. Créez un second profil avec un autre compte
-2. Utilisez `/findmatch` avec le premier compte
-3. Vérifiez vos messages privés
-
-**Résultat attendu**: 💖 Match trouvé envoyé en DM avec score et détails
-
-### Test 3: Réaction aux Matches
-1. Dans vos MP, cliquez sur ✅ pour accepter ou ❌ pour refuser
-2. Vérifiez que l'autre utilisateur reçoit une notification si vous acceptez
-
-**Résultat attendu**: ✅ Réactions fonctionnelles et notifications automatiques
-
-### Test 4: Configuration Administration
-1. Utilisez `/setup_channel #general` (en tant qu'admin)
-2. Vérifiez que l'embed apparaît dans le salon
-3. Utilisez `/stats` pour voir les statistiques
-
-**Résultat attendu**: 📊 Embed informatif publié et statistiques accessibles
-
-## 🔒 Sécurité et Confidentialité
-
-### Données Collectées
-- ✅ Prénom (anonymisé dans les matches)
-- ✅ Pronoms et âge
-- ✅ Intérêts et description
-- ✅ Avatar Discord (URL uniquement)
-
-### Données NON Collectées
-- ❌ Numéros de téléphone
-- ❌ Adresses personnelles  
-- ❌ Informations financières
-- ❌ Messages privés entre utilisateurs
-
-### Sécurité Intégrée
-- 🔒 Filtrage automatique par âge (13-30 ans, max 8 ans d'écart)
-- 🔒 Messages anonymisés pour les matches
-- 🔒 Notifications en DM pour la confidentialité
-- 🔒 Base de données locale (pas de cloud externe)
-
-## ⚠️ Important - Sécurité
-
-- **JAMAIS** committer ou partager votre token Discord
-- Le token doit rester dans les Secrets de Replit uniquement
-- Les données des utilisateurs sont confidentielles
-- Signalez tout comportement inapproprié
-
-## 🛠️ Structure du Projet
-
+# Tranche d'âge autorisée
+if not (13 <= profile_age <= 30):
+    continue  # Âges autorisés: 13-30 ans
 ```
-matching-bot/
+
+## 🎯 Processus de Matching Détaillé
+
+### **Flow Standard**
+1. **Recherche** `/findmatch` par Alice (20 ans, intérêts: guitare, randonnée)
+2. **Algorithme** trouve Bob (22 ans) avec 85% de compatibilité
+3. **Affichage** "En commun: guitare, randonnée (+2 autres)"
+4. **Navigation** Alice peut voir plusieurs profils avec **Suivant**
+5. **Acceptation** Alice clique **💖 Accepter**
+6. **Notification** Bob reçoit un message anonyme
+7. **Double opt-in** Si Bob accepte aussi → contact direct !
+
+### **Interface Interactive**
+```
+🔍 Correspondance 1/5                    [85% compatibilité]
+👤 Bob | 🏷️ il/lui | 🎂 22 ans
+🎯 En commun: guitare, randonnée, photographie
+💭 "Passionné de musique et de nature, toujours partant pour..."
+
+[💖 Accepter] [👎 Suivant] [🚨 Signaler]
+```
+
+## 🛡️ Sécurité et Confidentialité
+
+### **Protection des Mineurs**
+- **Ségrégation absolue** - Aucun contact possible mineur ↔ majeur
+- **Validation d'âge** - Contrôles stricts lors de la création
+- **Surveillance** - Logs détaillés des interactions
+
+### **Confidentialité**
+- **Anonymisation initiale** - Pas de pseudo/avatar révélé
+- **Révélation progressive** - Identité complète après double accord
+- **Données minimales** - Seules les infos nécessaires sont stockées
+- **Droit à l'oubli** - Suppression complète possible
+
+### **Modération**
+- **Signalement intégré** - Bouton dans chaque profil
+- **Outils admin** - Consultation et suppression de profils
+- **Logs complets** - Traçabilité de toutes les actions
+
+## 📊 Architecture Technique
+
+### **Structure du Projet**
+```
 ├── bot.py                    # Point d'entrée principal
-├── README.md                # Documentation
-├── pyproject.toml          # Dépendances Python
-├── cogs/                   # Modules du bot
-│   ├── utils.py           # Base de données et utilitaires
-│   ├── profile.py         # Gestion des profils
-│   ├── match.py           # Logique de matching
-│   └── admin.py           # Administration
-├── database/              # Base de données SQLite
-│   └── profiles.db       # (créé automatiquement)
-└── data/                 # Données et sauvegardes
-    └── backups/         # Exports JSON
+├── cogs/
+│   ├── profile.py           # Gestion des profils utilisateur
+│   ├── match.py             # Système de matching core
+│   ├── admin.py             # Outils d'administration
+│   ├── setup.py             # Commandes de configuration
+│   └── utils.py             # Database manager et utilitaires
+├── data/
+│   └── matching_bot.db      # Base de données SQLite
+└── config/
+    └── message_templates.json # Templates de messages
 ```
 
-## 🔧 Développement
+### **Base de Données**
+- **profiles** - Profils utilisateurs avec intérêts normalisés
+- **reports** - Signalements pour modération
+- **Sécurisée** - Chiffrement des données sensibles
 
-### Ajout de Nouvelles Fonctionnalités
-1. Créez un nouveau cog dans `cogs/`
-2. Ajoutez-le à la liste `COGS` dans `bot.py`
-3. Utilisez `db_instance` pour les interactions base de données
-4. Testez en mode développement avant déploiement
+### **Technologies**
+- **discord.py 2.3+** - Framework Discord asynchrone
+- **aiosqlite** - Base de données asynchrone
+- **Python 3.8+** - Langage moderne avec type hints
 
-### Debugging
-- Consultez les logs console pour les erreurs
-- La base de données se trouve dans `database/profiles.db`
-- Les backups sont dans `data/backups/`
+## 🧪 Tests et Validation
+
+### **Tests Critiques Automatisés**
+- ✅ Séparation stricte mineurs/majeurs
+- ✅ Normalisation des intérêts (synonymes)
+- ✅ Calculs de compatibilité
+- ✅ Filtres de sécurité
+
+### **Commande de Test Manuel**
+```bash
+python test_advanced_system.py
+```
+
+## 🔧 Configuration Avancée
+
+### **Personnalisation des Synonymes**
+```python
+# Dans cogs/match.py
+synonyms = {
+    'musique': ['music', 'son', 'audio', 'chant', 'melody'],
+    'sport': ['fitness', 'exercice', 'gym', 'athletique'],
+    # Ajoutez vos mappings...
+}
+```
+
+### **Ajustement des Seuils**
+```python
+# Seuil minimum de compatibilité
+if final_score > 0.1:  # 10% minimum
+
+# Bonus pour correspondances multiples
+if intersection >= 3:
+    base_score *= 1.2  # +20% si 3+ intérêts communs
+```
+
+## 📈 Statistiques et Monitoring
+
+### **Métriques Disponibles**
+- Nombre total de profils actifs
+- Répartition par tranches d'âge
+- Statistiques de matching (succès/échecs)
+- Signalements et modération
+
+### **Logs Détaillés**
+- Actions utilisateurs (création, modification, suppression)
+- Matching et acceptations
+- Signalements et actions de modération
+- Erreurs système avec stack traces
+
+## 🤝 Contribution et Support
+
+### **Guidelines de Contribution**
+1. **Fork** le repository
+2. **Créer une branche** pour votre feature
+3. **Tester** vos modifications
+4. **Soumettre** une pull request avec description détaillée
+
+### **Rapporter un Bug**
+- Utiliser les **Issues** GitHub avec template
+- Inclure les **logs d'erreur** complets
+- Décrire les **étapes de reproduction**
+
+### **Support**
+- 📧 Email: support@bot-matching.com
+- 💬 Discord: Server de support [Lien]
+- 📚 Documentation: [Wiki complet]
 
 ---
 
-**Créé avec ❤️ pour faciliter les rencontres respectueuses dans la communauté Discord**
-   
+## 📄 Licence
+
+Ce projet est sous licence MIT. Voir [LICENSE](LICENSE) pour plus de détails.
+
+## 🙏 Remerciements
+
+Développé avec ❤️ pour faciliter les rencontres positives et sécurisées sur Discord.
+
+**Version:** 2.0 | **Dernière mise à jour:** Décembre 2024</new_str>

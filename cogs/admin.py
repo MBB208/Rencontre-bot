@@ -28,10 +28,10 @@ class Admin(commands.Cog):
     async def export_profiles(self, interaction: discord.Interaction):
         """Exporter tous les profils dans un fichier JSON de sauvegarde"""
         
-        # Vérification des permissions
+        # Vérification STRICTE des permissions d'administration
         if not await self.is_admin(interaction):
             await interaction.response.send_message(
-                "❌ Cette commande est réservée aux administrateurs.",
+                "❌ Cette commande est réservée aux administrateurs du serveur uniquement.",
                 ephemeral=True
             )
             return
@@ -101,10 +101,10 @@ class Admin(commands.Cog):
     async def list_profiles(self, interaction: discord.Interaction, limit: int = 10):
         """Afficher la liste des profils avec informations de base"""
         
-        # Vérification des permissions
+        # Vérification STRICTE des permissions d'administration
         if not await self.is_admin(interaction):
             await interaction.response.send_message(
-                "❌ Cette commande est réservée aux administrateurs.",
+                "❌ Cette commande est réservée aux administrateurs du serveur uniquement.",
                 ephemeral=True
             )
             return
@@ -172,14 +172,111 @@ class Admin(commands.Cog):
                 ephemeral=True
             )
     
+    @app_commands.command(name="consultsignal", description="[ADMIN] Consulter les signalements")
+    @app_commands.describe(limit="Nombre de signalements à afficher (défaut: 10)")
+    async def consultsignal(self, interaction: discord.Interaction, limit: int = 10):
+        """Afficher les derniers signalements"""
+        
+        # Vérification des permissions d'administration OBLIGATOIRE
+        if not await self.is_admin(interaction):
+            await interaction.response.send_message(
+                "❌ Cette commande est réservée aux administrateurs du serveur.",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            # Créer la table reports si elle n'existe pas
+            await db_instance.connection.execute("""
+                CREATE TABLE IF NOT EXISTS reports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reporter_id TEXT NOT NULL,
+                    reported_id TEXT NOT NULL,
+                    reason TEXT,
+                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            
+            # Compter le total des signalements
+            async with db_instance.connection.execute("SELECT COUNT(*) FROM reports") as cursor:
+                total_count = await cursor.fetchone()
+                total_reports = total_count[0] if total_count else 0
+            
+            if total_reports == 0:
+                await interaction.response.send_message(
+                    "📭 Aucun signalement trouvé.",
+                    ephemeral=True
+                )
+                return
+            
+            # Limiter entre 1 et 50
+            limit = max(1, min(limit, 50))
+            
+            # Récupérer les signalements avec infos des profils
+            async with db_instance.connection.execute("""
+                SELECT r.id, r.reporter_id, r.reported_id, r.reason, r.timestamp,
+                       p1.prenom as reporter_name, p2.prenom as reported_name
+                FROM reports r
+                LEFT JOIN profiles p1 ON r.reporter_id = p1.user_id
+                LEFT JOIN profiles p2 ON r.reported_id = p2.user_id
+                ORDER BY r.timestamp DESC LIMIT ?
+            """, (limit,)) as cursor:
+                reports = await cursor.fetchall()
+            
+            # Créer l'embed
+            embed = discord.Embed(
+                title="🚨 Signalements",
+                description=f"Affichage de {len(reports)} signalements sur {total_reports} au total",
+                color=discord.Color.red()
+            )
+            
+            # Ajouter les signalements
+            reports_text = ""
+            for report in reports:
+                report_id, reporter_id, reported_id, reason, timestamp, reporter_name, reported_name = report
+                
+                reporter_display = reporter_name if reporter_name else f"ID:{reporter_id[:8]}..."
+                reported_display = reported_name if reported_name else f"ID:{reported_id[:8]}..."
+                reason_text = reason if reason else "Aucune raison fournie"
+                
+                reports_text += f"**#{report_id}** {reporter_display} → {reported_display}\n"
+                reports_text += f"📅 {timestamp[:16]} | 💬 {reason_text[:50]}{'...' if len(reason_text) > 50 else ''}\n\n"
+            
+            if reports_text:
+                embed.add_field(
+                    name="📋 Signalements récents",
+                    value=reports_text[:1024],  # Limite Discord
+                    inline=False
+                )
+            
+            # Statistiques
+            embed.add_field(
+                name="📊 Statistiques",
+                value=f"**Total :** {total_reports}\n"
+                      f"**Affichés :** {len(reports)}\n"
+                      f"**Limite :** {limit}",
+                inline=True
+            )
+            
+            embed.set_footer(text="Utilisez /deleteprofileadmin pour supprimer un profil problématique")
+            
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            
+        except Exception as e:
+            print(f"❌ Erreur consultsignal: {e}")
+            await interaction.response.send_message(
+                "❌ Une erreur s'est produite lors de la consultation des signalements.",
+                ephemeral=True
+            )
+
     @app_commands.command(name="stats", description="[ADMIN] Statistiques générales du bot")
     async def stats(self, interaction: discord.Interaction):
         """Afficher des statistiques générales sur le bot et la base de données"""
         
-        # Vérification des permissions
+        # Vérification STRICTE des permissions d'administration
         if not await self.is_admin(interaction):
             await interaction.response.send_message(
-                "❌ Cette commande est réservée aux administrateurs.",
+                "❌ Cette commande est réservée aux administrateurs du serveur uniquement.",
                 ephemeral=True
             )
             return
@@ -246,6 +343,69 @@ class Admin(commands.Cog):
             print(f"❌ Erreur lors de l'affichage des stats: {e}")
             await interaction.response.send_message(
                 "❌ Une erreur s'est produite lors de l'affichage des statistiques.",
+                ephemeral=True
+            )
+
+    @app_commands.command(name="deleteprofileadmin", description="[ADMIN] Supprimer un profil par ID utilisateur")
+    @app_commands.describe(user_id="L'ID Discord de l'utilisateur dont supprimer le profil")
+    async def deleteprofileadmin(self, interaction: discord.Interaction, user_id: str):
+        """Supprimer le profil d'un utilisateur spécifique (admin uniquement)"""
+        
+        # Vérification STRICTE des permissions d'administration
+        if not await self.is_admin(interaction):
+            await interaction.response.send_message(
+                "❌ Cette commande est réservée aux administrateurs du serveur uniquement.",
+                ephemeral=True
+            )
+            return
+        
+        try:
+            # Vérifier si le profil existe
+            async with db_instance.connection.execute(
+                "SELECT prenom, pronoms, age FROM profiles WHERE user_id = ?", 
+                (user_id,)
+            ) as cursor:
+                profile = await cursor.fetchone()
+            
+            if not profile:
+                await interaction.response.send_message(
+                    f"❌ Aucun profil trouvé pour l'ID utilisateur `{user_id}`.",
+                    ephemeral=True
+                )
+                return
+            
+            prenom, pronoms, age = profile
+            
+            # Supprimer le profil
+            await db_instance.connection.execute(
+                "DELETE FROM profiles WHERE user_id = ?", 
+                (user_id,)
+            )
+            
+            # Supprimer les signalements liés
+            await db_instance.connection.execute(
+                "DELETE FROM reports WHERE reported_id = ? OR reporter_id = ?",
+                (user_id, user_id)
+            )
+            
+            await db_instance.connection.commit()
+            
+            # Log de l'action admin
+            print(f"🔨 ADMIN ACTION: {interaction.user.id} a supprimé le profil de {user_id} ({prenom})")
+            
+            await interaction.response.send_message(
+                f"🔨 **Profil supprimé par administrateur**\n\n"
+                f"**Utilisateur :** {prenom} ({pronoms}, {age} ans)\n"
+                f"**ID Discord :** `{user_id}`\n"
+                f"**Action effectuée par :** {interaction.user.mention}\n\n"
+                f"✅ Profil et signalements associés supprimés définitivement.",
+                ephemeral=True
+            )
+            
+        except Exception as e:
+            print(f"❌ Erreur deleteprofileadmin: {e}")
+            await interaction.response.send_message(
+                "❌ Une erreur s'est produite lors de la suppression du profil.",
                 ephemeral=True
             )
 

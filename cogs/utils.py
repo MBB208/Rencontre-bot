@@ -1,24 +1,37 @@
+
 import aiosqlite
 import json
 import math
 import os
+import re
+import unicodedata
 from discord.ext import commands
 
 class DatabaseManager:
-    """Gestionnaire de base de données asynchrone utilisant aiosqlite"""
+    """Gestionnaire principal de la base de données SQLite"""
     
-    def __init__(self, db_path="database/profiles.db"):
+    def __init__(self, db_path: str = "data/matching_bot.db"):
         self.db_path = db_path
         self.connection = None
-    
+        
     async def connect(self):
-        """Connexion à la base de données et création des tables si nécessaire"""
-        # Créer le dossier database s'il n'existe pas
-        os.makedirs("database", exist_ok=True)
+        """Établir la connexion à la base de données"""
+        # S'assurer que le dossier existe
+        os.makedirs("data", exist_ok=True)
         
         self.connection = await aiosqlite.connect(self.db_path)
         
-        # Créer la table profiles si elle n'existe pas
+        # Activer les foreign keys
+        await self.connection.execute("PRAGMA foreign_keys = ON")
+        
+        # Créer les tables de base
+        await self.init_tables()
+        
+        print("✅ Base de données initialisée")
+        
+    async def init_tables(self):
+        """Créer toutes les tables nécessaires"""
+        # Table profiles principale
         await self.connection.execute("""
             CREATE TABLE IF NOT EXISTS profiles (
                 user_id TEXT PRIMARY KEY,
@@ -26,103 +39,132 @@ class DatabaseManager:
                 pronoms TEXT NOT NULL,
                 age INTEGER NOT NULL,
                 interets TEXT NOT NULL,
-                description TEXT NOT NULL,
+                interets_canonical TEXT,
+                description TEXT,
                 avatar_url TEXT,
-                vector TEXT DEFAULT '[0,0,0,0,0]'
+                vector TEXT,
+                prefs TEXT DEFAULT '{}',
+                activity_score REAL DEFAULT 1.0,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
-        # Migration : Ajouter la colonne vector si elle n'existe pas
-        try:
-            await self.connection.execute("ALTER TABLE profiles ADD COLUMN vector TEXT DEFAULT '[0,0,0,0,0]'")
-            await self.connection.commit()
-            print("✅ Migration : colonne 'vector' ajoutée")
-        except:
-            # La colonne existe déjà ou autre erreur non critique
-            pass
-            
+        # Table matches pour le système de matching
+        await self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS matches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                requester_id TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending_b',
+                nonce TEXT NOT NULL,
+                score REAL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(requester_id, target_id, nonce)
+            )
+        """)
+        
+        # Table suggestions pour les propositions proactives
+        await self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS suggestions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                candidate_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                nonce TEXT NOT NULL,
+                score REAL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Table reports pour la modération
+        await self.connection.execute("""
+            CREATE TABLE IF NOT EXISTS reports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                reporter_id TEXT NOT NULL,
+                reported_id TEXT NOT NULL,
+                reason TEXT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
         await self.connection.commit()
-        print("✅ Base de données initialisée")
-    
+        
     async def close(self):
-        """Fermer la connexion à la base de données"""
+        """Fermer la connexion"""
         if self.connection:
             await self.connection.close()
 
-# Instance globale de la base de données
+# Instance globale
 db_instance = DatabaseManager()
 
-def serialize_interests(interests_list):
-    """Convertir une liste d'intérêts en JSON"""
-    if isinstance(interests_list, str):
-        # Si c'est une chaîne CSV, la convertir en liste
-        interests_list = [interest.strip() for interest in interests_list.split(',')]
-    return json.dumps(interests_list)
+def serialize_interests(interests_list: list) -> str:
+    """Convertit une liste d'intérêts en JSON"""
+    if not interests_list:
+        return "[]"
+    # Nettoyer et normaliser
+    clean_interests = [interest.strip() for interest in interests_list if interest.strip()]
+    return json.dumps(clean_interests, ensure_ascii=False)
 
-def deserialize_interests(interests_json):
-    """Convertir du JSON en liste d'intérêts"""
+def deserialize_interests(interests_json: str) -> list:
+    """Convertit un JSON d'intérêts en liste"""
     try:
+        if not interests_json or interests_json.strip() == "":
+            return []
         return json.loads(interests_json)
     except (json.JSONDecodeError, TypeError):
         return []
 
-def serialize_vector(vector_list):
-    """Convertir une liste (vecteur) en JSON"""
-    return json.dumps(vector_list)
+def serialize_vector(vector_data) -> str:
+    """Sérialise un vecteur en JSON"""
+    if vector_data is None:
+        return "[]"
+    if isinstance(vector_data, (list, tuple)):
+        return json.dumps(list(vector_data))
+    return str(vector_data)
 
-def deserialize_vector(vector_json):
-    """Convertir du JSON en liste (vecteur)"""
-    try:
-        return json.loads(vector_json)
-    except (json.JSONDecodeError, TypeError):
-        return [0, 0, 0, 0, 0]  # Vecteur par défaut
+def normalize_text(text: str) -> str:
+    """Normalise un texte (minuscules, sans accents)"""
+    if not text:
+        return ""
+    # Convertir en minuscules
+    text = text.lower().strip()
+    # Supprimer les accents
+    text = unicodedata.normalize('NFD', text)
+    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
+    return text
 
-def cosine_similarity(vector_a, vector_b):
-    """
-    Calculer la similarité cosinus entre deux vecteurs
-    Gestion sécurisée des normes nulles
-    """
-    if len(vector_a) != len(vector_b):
-        return 0.0
-    
-    # Calculer le produit scalaire
-    dot_product = sum(a * b for a, b in zip(vector_a, vector_b))
-    
-    # Calculer les normes
-    norm_a = math.sqrt(sum(a * a for a in vector_a))
-    norm_b = math.sqrt(sum(b * b for b in vector_b))
-    
-    # Éviter la division par zéro
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    
-    return dot_product / (norm_a * norm_b)
-
-def calculate_interests_similarity(interests_a, interests_b):
-    """Calculer la similarité basée sur les intérêts communs"""
+def calculate_interests_similarity(interests_a: list, interests_b: list) -> float:
+    """Calcule la similarité entre deux listes d'intérêts"""
     if not interests_a or not interests_b:
         return 0.0
     
-    # Convertir en ensembles pour faciliter les opérations
-    set_a = set(interest.lower().strip() for interest in interests_a)
-    set_b = set(interest.lower().strip() for interest in interests_b)
+    # Normaliser les intérêts
+    norm_a = set(normalize_text(interest) for interest in interests_a)
+    norm_b = set(normalize_text(interest) for interest in interests_b)
     
-    # Calculer l'intersection et l'union
-    intersection = set_a & set_b
-    union = set_a | set_b
+    # Calculer la similarité de Jaccard
+    intersection = len(norm_a & norm_b)
+    union = len(norm_a | norm_b)
     
-    # Indice de Jaccard
-    if len(union) == 0:
+    if union == 0:
         return 0.0
     
-    return len(intersection) / len(union)
+    base_score = intersection / union
+    
+    # Bonus pour les intérêts rares (approximation simple)
+    rare_bonus = 0.1 * min(intersection, 2)  # Bonus pour jusqu'à 2 intérêts communs rares
+    
+    return min(base_score + rare_bonus, 1.0)  # Cap à 100%
 
 class Utils(commands.Cog):
     """Cog contenant les fonctions utilitaires"""
-    
+
     def __init__(self, bot):
         self.bot = bot
-    
+
     async def cog_load(self):
         """Initialiser la base de données quand le cog est chargé"""
         await db_instance.connect()

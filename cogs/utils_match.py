@@ -398,3 +398,125 @@ async def advanced_matching_algorithm(db_connection: aiosqlite.Connection,
     candidates.sort(key=lambda x: x['score'], reverse=True)
     
     return candidates[:max_candidates]
+"""
+Utilitaires pour le système de matching avancé
+"""
+import json
+import math
+import re
+import hashlib
+import random
+import string
+import unicodedata
+
+DEFAULT_WEIGHTS = {
+    'interests': 0.7,
+    'age': 0.3
+}
+
+def normalize_tag(tag: str) -> str:
+    """Normalise un tag (lowercase, sans accents, etc.)"""
+    tag = tag.lower().strip()
+    tag = unicodedata.normalize('NFD', tag).encode('ascii', 'ignore').decode('ascii')
+    return re.sub(r'[^a-z0-9]', '_', tag)
+
+def canonicalize_interests(interests: list) -> list:
+    """Canonicalise une liste d'intérêts"""
+    return [normalize_tag(interest) for interest in interests if interest.strip()]
+
+async def compute_idf_weights(connection) -> dict:
+    """Calcule les poids IDF pour tous les tags"""
+    weights = {}
+    try:
+        async with connection.execute("SELECT COUNT(*) FROM profiles") as cursor:
+            total_profiles = (await cursor.fetchone())[0]
+        
+        if total_profiles == 0:
+            return weights
+            
+        async with connection.execute("SELECT interets FROM profiles WHERE interets IS NOT NULL") as cursor:
+            async for row in cursor:
+                try:
+                    interests = json.loads(row[0])
+                    for interest in interests:
+                        normalized = normalize_tag(interest)
+                        weights[normalized] = weights.get(normalized, 0) + 1
+                except:
+                    continue
+        
+        # Calculer IDF
+        for tag, count in weights.items():
+            weights[tag] = math.log((1 + total_profiles) / (1 + count)) + 1
+            
+    except Exception as e:
+        print(f"Erreur compute_idf_weights: {e}")
+    
+    return weights
+
+def compute_match_score(user_a: dict, user_b: dict, idf_weights: dict, weights: dict) -> float:
+    """Calcule le score de compatibilité entre deux utilisateurs"""
+    try:
+        # Score d'intérêts
+        interests_a = set(canonicalize_interests(json.loads(user_a.get('interets', '[]'))))
+        interests_b = set(canonicalize_interests(json.loads(user_b.get('interets', '[]'))))
+        
+        common = interests_a & interests_b
+        union = interests_a | interests_b
+        
+        if not union:
+            interests_score = 0
+        else:
+            # Score pondéré par IDF
+            weighted_common = sum(idf_weights.get(tag, 1) for tag in common)
+            weighted_union = sum(idf_weights.get(tag, 1) for tag in union)
+            interests_score = weighted_common / weighted_union if weighted_union > 0 else 0
+        
+        # Score d'âge (gaussien)
+        age_diff = abs(user_a['age'] - user_b['age'])
+        age_score = math.exp(-(age_diff ** 2) / (2 * 4.0 ** 2))
+        
+        # Score final
+        final_score = weights.get('interests', 0.7) * interests_score + weights.get('age', 0.3) * age_score
+        
+        return min(1.0, max(0.0, final_score))
+        
+    except Exception as e:
+        print(f"Erreur compute_match_score: {e}")
+        return 0.0
+
+def generate_nonce() -> str:
+    """Génère un nonce unique"""
+    return ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+
+def is_minor_major_mix(age_a: int, age_b: int) -> bool:
+    """Vérifie si c'est un mélange mineur/majeur"""
+    return (age_a < 18) != (age_b < 18)
+
+def format_age_range(age: int) -> str:
+    """Formate l'âge en tranche"""
+    if age < 16:
+        return "13-15 ans"
+    elif age < 18:
+        return "16-17 ans"
+    elif age < 21:
+        return "18-20 ans"
+    elif age < 25:
+        return "21-24 ans"
+    else:
+        return "25+ ans"
+
+def truncate_description(description: str, max_length: int = 150) -> str:
+    """Tronque une description"""
+    if not description:
+        return "Aucune description fournie."
+    return description[:max_length] + ("..." if len(description) > max_length else "")
+
+def get_top_interests(interests: list, limit: int = 5) -> str:
+    """Récupère les top intérêts formatés"""
+    if not interests:
+        return "Intérêts non spécifiés"
+    top = interests[:limit]
+    result = ", ".join(top)
+    if len(interests) > limit:
+        result += f" (+{len(interests) - limit} autres)"
+    return result
