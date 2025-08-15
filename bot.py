@@ -26,8 +26,8 @@ COGS = [
     'cogs.setup',
     'cogs.profile', 
     'cogs.admin',
-    'cogs.match_advanced'
-    # 'cogs.match' # Désactivé - conflit avec match_advanced
+    'cogs.match'  # Système de matching principal révisé
+    # 'cogs.match_advanced' # Intégré dans match.py
     # 'cogs.match_proactive' # Désactivé pour l'instant
 ]
 
