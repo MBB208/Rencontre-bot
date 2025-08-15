@@ -20,15 +20,13 @@ intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# Liste des cogs à charger
+# Liste des cogs à charger (ordre important)
 COGS = [
-    'cogs.utils',
-    'cogs.setup',
-    'cogs.profile', 
-    'cogs.admin',
-    'cogs.match'  # Système de matching principal révisé
-    # 'cogs.match_advanced' # Intégré dans match.py
-    # 'cogs.match_proactive' # Désactivé pour l'instant
+    'cogs.utils',      # Base de données en premier
+    'cogs.profile',    # Gestion des profils
+    'cogs.match',      # Système de matching principal
+    'cogs.admin',      # Outils d'administration
+    'cogs.setup'       # Configuration du bot
 ]
 
 @bot.event
@@ -39,6 +37,7 @@ async def on_ready():
         synced = await bot.tree.sync()
         print(f"✅ Bot connecté : {bot.user} (ID: {bot.user.id})")
         print(f"✅ {len(synced)} commandes slash synchronisées")
+        print(f"✅ Connecté à {len(bot.guilds)} serveur(s)")
     except Exception as e:
         print(f"❌ Erreur lors de la synchronisation des commandes: {e}")
 

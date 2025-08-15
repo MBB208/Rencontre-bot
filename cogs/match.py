@@ -12,7 +12,6 @@ class Match(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.matches_cache = {}  # Cache des matches en cours
 
     def calculate_compatibility(self, profile1, profile2):
         """Calcul de compatibilité avancé entre deux profils"""
@@ -21,8 +20,8 @@ class Match(commands.Cog):
             age1, age2 = profile1[3], profile2[3]
             interests1 = profile1[4].lower() if profile1[4] else ""
             interests2 = profile2[4].lower() if profile2[4] else ""
-            description1 = profile1[6].lower() if profile1[6] else ""
-            description2 = profile2[6].lower() if profile2[6] else ""
+            description1 = profile1[6].lower() if profile1[6] and len(profile1) > 6 else ""
+            description2 = profile2[6].lower() if profile2[6] and len(profile2) > 6 else ""
 
             # 1. Vérification de la compatibilité d'âge
             age_diff = abs(age1 - age2)
@@ -33,20 +32,16 @@ class Match(commands.Cog):
             if (age1 < 18 and age2 >= 18) or (age1 >= 18 and age2 < 18):
                 return 0
 
-            # 2. Score d'intérêts (60% du score final)
+            # 2. Score d'intérêts (70% du score final)
             interests_score = self.calculate_interests_similarity(interests1, interests2)
 
-            # 3. Score d'âge (25% du score final)
+            # 3. Score d'âge (30% du score final)
             age_score = max(0, 1 - (age_diff / 8)) * 100
-
-            # 4. Score de description (15% du score final)
-            description_score = self.calculate_text_similarity(description1, description2)
 
             # Score final pondéré
             final_score = (
-                interests_score * 0.60 +
-                age_score * 0.25 +
-                description_score * 0.15
+                interests_score * 0.70 +
+                age_score * 0.30
             )
 
             return min(100, max(0, final_score))
@@ -123,23 +118,6 @@ class Match(commands.Cog):
                 return True
         return False
 
-    def calculate_text_similarity(self, text1, text2):
-        """Calcul de similarité textuelle simple"""
-        try:
-            words1 = set(self.extract_keywords(text1))
-            words2 = set(self.extract_keywords(text2))
-
-            if not words1 or not words2:
-                return 0
-
-            intersection = len(words1.intersection(words2))
-            union = len(words1.union(words2))
-
-            return (intersection / union) * 100 if union > 0 else 0
-
-        except:
-            return 0
-
     @app_commands.command(name="findmatch", description="Trouver des correspondances compatibles")
     async def findmatch(self, interaction: discord.Interaction):
         """Recherche de correspondances avec l'algorithme d'IA"""
@@ -164,24 +142,14 @@ class Match(commands.Cog):
                 await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
-            # Créer la table d'historique si nécessaire
-            await db_instance.connection.execute("""
-                CREATE TABLE IF NOT EXISTS match_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user1_id TEXT NOT NULL,
-                    user2_id TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # Nettoyer l'historique ancien (18 jours)
+            # Nettoyer uniquement l'historique de matching ancien (18 jours)
+            # Les profils utilisateurs ne sont JAMAIS supprimés automatiquement
             cutoff_date = (datetime.now() - timedelta(days=18)).isoformat()
             await db_instance.connection.execute(
                 "DELETE FROM match_history WHERE timestamp < ?", (cutoff_date,)
             )
             await db_instance.connection.execute(
-                "DELETE FROM matches WHERE created_at < ?", (cutoff_date,)
+                "DELETE FROM matches WHERE created_at < ? AND status = 'accepted'", (cutoff_date,)
             )
             await db_instance.connection.commit()
 
@@ -197,16 +165,20 @@ class Match(commands.Cog):
 
             # Récupérer les profils non vus
             seen_users_str = ', '.join(['?'] * len(seen_users)) if seen_users else "''"
-            query = f"SELECT * FROM profiles WHERE user_id != ? AND user_id NOT IN ({seen_users_str})"
-            params = [user_id] + seen_users
-            
+            if seen_users:
+                query = f"SELECT * FROM profiles WHERE user_id != ? AND user_id NOT IN ({seen_users_str})"
+                params = [user_id] + seen_users
+            else:
+                query = "SELECT * FROM profiles WHERE user_id != ?"
+                params = [user_id]
+
             async with db_instance.connection.execute(query, params) as cursor:
                 all_profiles = await cursor.fetchall()
 
             if not all_profiles:
                 embed = discord.Embed(
                     title="😔 Aucune Correspondance",
-                    description="Il n'y a pas encore d'autres profils dans la base de données.\n\nRevenez plus tard quand d'autres utilisateurs auront rejoint !",
+                    description="Il n'y a pas encore d'autres profils dans la base de données ou vous avez déjà vu tous les profils disponibles.\n\nRevenez plus tard quand d'autres utilisateurs auront rejoint !",
                     color=discord.Color.orange()
                 )
                 await interaction.followup.send(embed=embed, ephemeral=True)
@@ -216,7 +188,7 @@ class Match(commands.Cog):
             matches = []
             for profile in all_profiles:
                 compatibility = self.calculate_compatibility(user_profile, profile)
-                if compatibility >= 60:  # Seuil minimum de 60%
+                if compatibility >= 50:  # Seuil minimum de 50%
                     matches.append((profile, compatibility))
 
             # Trier par score de compatibilité
@@ -226,7 +198,7 @@ class Match(commands.Cog):
                 embed = discord.Embed(
                     title="🔍 Aucune Correspondance Trouvée",
                     description=(
-                        "Notre algorithme n'a pas trouvé de correspondance suffisamment compatible (60%+).\n\n"
+                        "Notre algorithme n'a pas trouvé de correspondance suffisamment compatible (50%+).\n\n"
                         "**Conseils pour améliorer vos chances :**\n"
                         "• Enrichissez vos intérêts avec plus de détails\n"
                         "• Utilisez des mots-clés variés\n"
@@ -261,8 +233,8 @@ class Match(commands.Cog):
             # Créer le canal DM
             dm_channel = await user.create_dm()
 
-            # Limiter à 5 premiers matches
-            top_matches = matches[:5]
+            # Limiter à 3 premiers matches
+            top_matches = matches[:3]
 
             for i, (profile, compatibility) in enumerate(top_matches):
                 # Récupérer l'utilisateur Discord pour l'avatar
@@ -300,9 +272,7 @@ class Match(commands.Cog):
 
                 embed.set_footer(text=f"Match {i + 1}/{len(top_matches)} • Que voulez-vous faire ?")
 
-                if avatar_url:
-                    embed.set_thumbnail(url=avatar_url)
-
+                
                 # Boutons d'action
                 view = MatchActionView(self, profile[0], user_profile[0])
 
@@ -392,28 +362,8 @@ class Match(commands.Cog):
 
             # Enregistrer le match dans la base
             await db_instance.connection.execute("""
-                CREATE TABLE IF NOT EXISTS matches (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user1_id TEXT NOT NULL,
-                    user2_id TEXT NOT NULL,
-                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            # Créer aussi la table des interactions pour éviter les répétitions
-            await db_instance.connection.execute("""
-                CREATE TABLE IF NOT EXISTS match_history (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user1_id TEXT NOT NULL,
-                    user2_id TEXT NOT NULL,
-                    action TEXT NOT NULL,
-                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-
-            await db_instance.connection.execute("""
-                INSERT INTO matches (user1_id, user2_id, created_at) VALUES (?, ?, ?)
+                INSERT INTO matches (user1_id, user2_id, status, created_at) 
+                VALUES (?, ?, 'accepted', ?)
             """, (user1_id, user2_id, datetime.now().isoformat()))
 
             await db_instance.connection.commit()
@@ -494,21 +444,9 @@ class Match(commands.Cog):
                 )
                 return
 
-            # Créer la table de signalements si nécessaire
-            await db_instance.connection.execute("""
-                CREATE TABLE IF NOT EXISTS reports (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    reporter_id TEXT NOT NULL,
-                    reported_user_id TEXT NOT NULL,
-                    reason TEXT NOT NULL,
-                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-                    status TEXT DEFAULT 'pending'
-                )
-            """)
-
             # Enregistrer le signalement
             await db_instance.connection.execute("""
-                INSERT INTO reports (reporter_id, reported_user_id, reason)
+                INSERT INTO reports (reporter_id, reported_id, reason)
                 VALUES (?, ?, ?)
             """, (str(interaction.user.id), str(user.id), reason))
 
@@ -544,9 +482,9 @@ class MatchActionView(discord.ui.View):
         self.target_user_id = target_user_id
         self.requester_user_id = requester_user_id
 
-    @discord.ui.button(label="💖 Smash", style=discord.ButtonStyle.green, emoji="💖")
-    async def smash(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Action Smash - Envoie notification à la cible"""
+    @discord.ui.button(label="💖 Intéressé(e)", style=discord.ButtonStyle.green, emoji="💖")
+    async def interested(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Action Intéressé - Envoie notification à la cible"""
         try:
             # Récupérer le profil du requester
             async with db_instance.connection.execute(
@@ -579,12 +517,12 @@ class MatchActionView(discord.ui.View):
             await interaction.edit_original_response(view=self)
 
         except Exception as e:
-            print(f"❌ Erreur smash: {e}")
+            print(f"❌ Erreur interested: {e}")
             await interaction.response.send_message("❌ Erreur lors de l'envoi.", ephemeral=True)
 
-    @discord.ui.button(label="⏭️ Pass", style=discord.ButtonStyle.gray, emoji="⏭️")
+    @discord.ui.button(label="⏭️ Passer", style=discord.ButtonStyle.gray, emoji="⏭️")
     async def pass_match(self, interaction: discord.Interaction, button: discord.ui.Button):
-        """Action Pass"""
+        """Action Passer"""
         await interaction.response.send_message(
             "⏭️ **Correspondance passée.**\nVous pouvez voir d'autres suggestions ci-dessous.",
             ephemeral=True
@@ -601,18 +539,7 @@ class MatchActionView(discord.ui.View):
         try:
             # Enregistrer le signalement
             await db_instance.connection.execute("""
-                CREATE TABLE IF NOT EXISTS reports (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    reporter_id TEXT NOT NULL,
-                    reported_user_id TEXT NOT NULL,
-                    reason TEXT NOT NULL DEFAULT 'Signalé via match',
-                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-                    status TEXT DEFAULT 'pending'
-                )
-            """)
-
-            await db_instance.connection.execute("""
-                INSERT INTO reports (reporter_id, reported_user_id, reason)
+                INSERT INTO reports (reporter_id, reported_id, reason)
                 VALUES (?, ?, ?)
             """, (self.requester_user_id, self.target_user_id, "Signalé via correspondance"))
 
@@ -688,18 +615,7 @@ class NotificationView(discord.ui.View):
         """Signaler la personne qui a envoyé la notification"""
         try:
             await db_instance.connection.execute("""
-                CREATE TABLE IF NOT EXISTS reports (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    reporter_id TEXT NOT NULL,
-                    reported_user_id TEXT NOT NULL,
-                    reason TEXT NOT NULL DEFAULT 'Signalé via notification',
-                    timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
-                    status TEXT DEFAULT 'pending'
-                )
-            """)
-
-            await db_instance.connection.execute("""
-                INSERT INTO reports (reporter_id, reported_user_id, reason)
+                INSERT INTO reports (reporter_id, reported_id, reason)
                 VALUES (?, ?, ?)
             """, (self.target_id, self.requester_id, "Signalé via notification"))
 

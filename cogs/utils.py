@@ -54,28 +54,22 @@ class DatabaseManager:
         await self.connection.execute("""
             CREATE TABLE IF NOT EXISTS matches (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                requester_id TEXT NOT NULL,
-                target_id TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending_b',
-                nonce TEXT NOT NULL,
-                score REAL,
+                user1_id TEXT NOT NULL,
+                user2_id TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(requester_id, target_id, nonce)
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
         
-        # Table suggestions pour les propositions proactives
+        # Table match_history pour éviter les répétitions
         await self.connection.execute("""
-            CREATE TABLE IF NOT EXISTS suggestions (
+            CREATE TABLE IF NOT EXISTS match_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id TEXT NOT NULL,
-                candidate_id TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                nonce TEXT NOT NULL,
-                score REAL,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                user1_id TEXT NOT NULL,
+                user2_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
         

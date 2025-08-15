@@ -2,7 +2,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from .utils import db_instance, serialize_interests, serialize_vector
+from .utils import db_instance, serialize_interests
 import json
 import re
 

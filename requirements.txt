@@ -5,3 +5,4 @@ aiosqlite
 discord.py
 psutil
 python-dotenv
+gpt3discord

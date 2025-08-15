@@ -1,3 +1,4 @@
+
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -136,45 +137,84 @@ class Setup(commands.Cog):
     async def send_bot_presentation(self, channel: discord.TextChannel):
         """Présentation du bot dans le canal configuré"""
         try:
+            # Utiliser l'icône du serveur si disponible
+            guild_icon = channel.guild.icon.url if channel.guild.icon else None
+            
             embed = discord.Embed(
-                title="🤖 Matching Bot - Rencontres Sécurisées",
-                description="Trouvez des personnes compatibles grâce à notre IA de matching !",
-                color=discord.Color.blue()
+                title="💖 **MATCHING BOT** - *Rencontres Sécurisées*",
+                description=(
+                    "🎯 ***Trouvez des personnes compatibles grâce à notre algorithme intelligent !***\n\n"
+                    "**__Protection absolue des mineurs__** • **__Double validation__** • **__Anonymat garanti__**"
+                ),
+                color=0xFF69B4  # Rose vibrant
             )
 
-            embed.add_field(
-                name="🚀 Commencer",
-                value="`/createprofile` puis `/findmatch`",
-                inline=True
-            )
+            # Icône du serveur dans l'embed
+            if guild_icon:
+                embed.set_thumbnail(url=guild_icon)
 
             embed.add_field(
-                name="🛡️ Sécurité",
-                value="Double opt-in • Protection mineurs • Anonymat",
-                inline=True
-            )
-
-            embed.add_field(
-                name="💡 Aide",
-                value="`/help` pour plus d'informations",
-                inline=True
-            )
-
-            embed.add_field(
-                name="🎯 Fonctionnalités",
+                name="🚀 **COMMANDES PRINCIPALES**",
                 value=(
-                    "• **Algorithme intelligent** : Compatibilité basée sur les intérêts\n"
-                    "• **Historique smart** : Jamais les mêmes suggestions\n"
-                    "• **Auto-nettoyage** : Données effacées après 18 jours\n"
-                    "• **Système de signalement** intégré"
+                    "**`/createprofile`** - *Créer votre profil de rencontre*\n"
+                    "**`/viewprofile`** - *Consulter votre profil ou celui d'un autre*\n"
+                    "**`/findmatch`** - *Rechercher des correspondances compatibles*\n"
+                    "**`/deleteprofile`** - *Supprimer définitivement votre profil*"
                 ),
                 inline=False
             )
 
-            embed.set_footer(text="Utilisez /help pour le guide complet • Bot sécurisé et confidentiel")
+            embed.add_field(
+                name="🛡️ **SÉCURITÉ & MODÉRATION**",
+                value=(
+                    "**`/report_profile`** - *Signaler un profil inapproprié*\n"
+                    "• ***Protection stricte*** : Séparation mineurs/majeurs\n"
+                    "• ***Double opt-in*** : Les 2 personnes doivent accepter\n"
+                    "• ***Anonymat initial*** : Identité révélée après accord mutuel"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="💡 **AIDE & SUPPORT**",
+                value=(
+                    "**`/help`** - *Guide complet d'utilisation*\n"
+                    "**`/setup`** - *(Admin) Configurer le canal de présentation*\n\n"
+                    "**📞 Support :** *Contactez les administrateurs du serveur*"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="✨ **FONCTIONNALITÉS AVANCÉES**",
+                value=(
+                    "🧠 **Algorithme IA** : *Compatibilité basée sur les centres d'intérêts*\n"
+                    "🔄 **Historique intelligent** : *Évite les répétitions de suggestions*\n"
+                    "🗑️ **Auto-nettoyage** : *Historique effacé après 18 jours*\n"
+                    "⚡ **Notifications DM** : *Toutes les interactions en privé*\n"
+                    "🎭 **Interface moderne** : *Boutons interactifs et embeds colorés*"
+                ),
+                inline=False
+            )
+
+            embed.add_field(
+                name="🎯 **COMMENT COMMENCER ?**",
+                value=(
+                    "**1️⃣** Tapez **`/createprofile`** pour créer votre profil\n"
+                    "**2️⃣** Utilisez **`/findmatch`** pour trouver des correspondances\n"
+                    "**3️⃣** Acceptez ou passez les suggestions reçues en DM\n"
+                    "**4️⃣** Si match mutuel, vous serez mis en contact ! 💕"
+                ),
+                inline=False
+            )
+
+            embed.set_footer(
+                text="🔒 Bot 100% sécurisé et confidentiel • Version 2.1 • Toutes les interactions sont privées",
+                icon_url=guild_icon
+            )
 
             await channel.send(embed=embed)
-            print(f"✅ Présentation envoyée dans {channel.name}")
+            print(f"✅ Présentation améliorée envoyée dans {channel.name}")
 
         except Exception as e:
             print(f"❌ Erreur présentation: {e}")
