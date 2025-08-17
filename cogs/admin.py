@@ -516,7 +516,7 @@ class Admin(commands.Cog):
             match_cog = Match(self.bot)
 
             # Calcul de compatibilité avec logs détaillés
-            compatibility = match_cog.calculate_advanced_compatibility(profile1, profile2)
+            compatibility = match_cog.calculate_compatibility(profile1, profile2)
 
             embed = discord.Embed(
                 title="🧪 Test de Compatibilité",

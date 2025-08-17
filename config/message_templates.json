@@ -172,3 +172,25 @@
         "description": "Votre profil a été créé avec succès. Vous pouvez maintenant chercher des correspondances."
     }
 }
+{
+  "match_found": {
+    "title": "💖 Nouvelle Correspondance !",
+    "description": "Une personne compatible a été trouvée pour vous.",
+    "color": "green"
+  },
+  "mutual_match": {
+    "title": "🎉 C'est un Match !",
+    "description": "Vous vous intéressez mutuellement !",
+    "color": "gold"
+  },
+  "profile_created": {
+    "title": "✅ Profil Créé !",
+    "description": "Votre profil a été créé avec succès.",
+    "color": "green"
+  },
+  "no_matches": {
+    "title": "😔 Aucune Correspondance",
+    "description": "Aucune nouvelle correspondance trouvée pour le moment.",
+    "color": "orange"
+  }
+}
