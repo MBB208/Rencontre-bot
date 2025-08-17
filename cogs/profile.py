@@ -206,29 +206,56 @@ class Profile(commands.Cog):
     @app_commands.command(name="viewprofile", description="Voir votre profil ou celui d'un autre utilisateur")
     @app_commands.describe(user="Utilisateur dont voir le profil (optionnel)")
     async def viewprofile(self, interaction: discord.Interaction, user: discord.User = None):
-        """Afficher le profil d'un utilisateur"""
+        """Afficher le profil d'un utilisateur avec protection anonymat"""
         target_user = user or interaction.user
         user_id = str(target_user.id)
+        requester_id = str(interaction.user.id)
 
         try:
-            async with db_instance.connection.execute(
-                "SELECT * FROM profiles WHERE user_id = ?", (user_id,)
-            ) as cursor:
-                profile = await cursor.fetchone()
+            # Si c'est son propre profil, pas de restrictions
+            if target_user == interaction.user:
+                async with db_instance.connection.execute(
+                    "SELECT * FROM profiles WHERE user_id = ?", (user_id,)
+                ) as cursor:
+                    profile = await cursor.fetchone()
 
-            if not profile:
-                if target_user == interaction.user:
+                if not profile:
                     await interaction.response.send_message(
                         "❌ Vous n'avez pas encore créé de profil.\n"
                         "Utilisez `/createprofile` pour commencer !",
                         ephemeral=True
                     )
-                else:
+                    return
+            else:
+                # Vérifier qu'il y a un match mutuel pour voir le profil d'autrui
+                async with db_instance.connection.execute("""
+                    SELECT * FROM matches 
+                    WHERE ((user1_id = ? AND user2_id = ?) OR (user1_id = ? AND user2_id = ?))
+                    AND status = 'matched'
+                """, (requester_id, user_id, user_id, requester_id)) as cursor:
+                    match = await cursor.fetchone()
+
+                if not match:
                     await interaction.response.send_message(
-                        f"❌ {target_user.mention} n'a pas de profil public.",
+                        f"🔒 **Profil protégé**\n\n"
+                        f"Vous ne pouvez voir le profil de {target_user.mention} que si vous avez un match mutuel.\n\n"
+                        f"💡 Utilisez `/findmatch` pour découvrir de nouveaux profils !",
                         ephemeral=True
                     )
-                return
+                    return
+
+                # Récupérer le profil si match confirmé
+                async with db_instance.connection.execute(
+                    "SELECT * FROM profiles WHERE user_id = ?", (user_id,)
+                ) as cursor:
+                    profile = await cursor.fetchone()
+
+                if not profile:
+                    await interaction.response.send_message(
+                        f"❌ {target_user.mention} n'a pas de profil disponible.",
+                        ephemeral=True
+                    )
+                    return
 
             # Créer l'embed du profil
             embed = discord.Embed(
