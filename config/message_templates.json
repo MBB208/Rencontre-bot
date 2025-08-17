@@ -150,3 +150,25 @@
     "algorithm": "💡 Score calculé par algorithme IA avec IDF et fuzzy matching"
   }
 }
+{
+    "match_found": {
+        "title": "💖 Correspondance trouvée !",
+        "description": "Une nouvelle correspondance vous attend. Compatibilité : {compatibility}%"
+    },
+    "mutual_match": {
+        "title": "🎉 C'est un Match !",
+        "description": "Vous vous intéressez mutuellement ! Identités révélées."
+    },
+    "notification": {
+        "title": "💖 Quelqu'un s'intéresse à vous !",
+        "description": "Une personne a montré de l'intérêt pour votre profil."
+    },
+    "no_matches": {
+        "title": "😔 Aucune correspondance",
+        "description": "Aucune correspondance compatible trouvée pour le moment."
+    },
+    "profile_created": {
+        "title": "✅ Profil créé !",
+        "description": "Votre profil a été créé avec succès. Vous pouvez maintenant chercher des correspondances."
+    }
+}

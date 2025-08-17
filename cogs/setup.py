@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -41,48 +40,29 @@ class Setup(commands.Cog):
         )
 
         embed.add_field(
-            name="🔧 Commandes Admin",
+            name="⚙️ Commandes Admin",
             value=(
-                "`/stats` - Statistiques du bot\n"
-                "`/list_profiles` - Liste des profils\n"
-                "`/export_profiles` - Export JSON des profils\n"
-                "`/consultsignal` - Voir les signalements"
+                "`/setup` - Configurer le canal de présentation\n"
+                "`/reload` - Recharger un cog (administrateurs)\n"
+                "`/export_profiles` - Exporter les données"
             ),
             inline=False
         )
 
-        # Informations de sécurité
         embed.add_field(
-            name="🛡️ Sécurité & Confidentialité",
+            name="🔒 Sécurité",
             value=(
-                "• **Protection mineurs** : Séparation absolue mineur/majeur\n"
-                "• **Double opt-in** : Les deux personnes doivent accepter\n"
-                "• **Anonymat initial** : Identité révélée après accord mutuel\n"
-                "• **Historique intelligent** : Évite les répétitions\n"
-                "• **Auto-nettoyage** : Données effacées après 18 jours"
+                "• Séparation stricte mineurs/majeurs\n"
+                "• Système de double opt-in\n"
+                "• Toutes les interactions sont privées et sécurisées\n"
+                "• Version 2.1"
             ),
             inline=False
-        )
-
-        # Comment commencer
-        embed.add_field(
-            name="🚀 Comment commencer ?",
-            value=(
-                "1️⃣ Créez votre profil avec `/createprofile`\n"
-                "2️⃣ Cherchez des correspondances avec `/findmatch`\n"
-                "3️⃣ Acceptez ou passez les suggestions reçues\n"
-                "4️⃣ Si match mutuel, vous serez mis en contact !"
-            ),
-            inline=False
-        )
-
-        embed.set_footer(
-            text="💡 Toutes les interactions sont privées et sécurisées • Version 2.1"
         )
 
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
-    @app_commands.command(name="setup", description="[ADMIN] Configurer le canal de présentation du bot")
+    @app_commands.command(name="setup_channel", description="[ADMIN] Configurer le canal de présentation du bot")
     @app_commands.describe(channel="Canal où le bot postera ses informations")
     async def setup(self, interaction: discord.Interaction, channel: discord.TextChannel):
         """Configurer le canal où le bot postera son guide d'utilisation"""
@@ -107,30 +87,44 @@ class Setup(commands.Cog):
                     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            await db_instance.connection.commit()
 
             # Sauvegarder la configuration
             await db_instance.connection.execute("""
                 INSERT OR REPLACE INTO server_config (guild_id, setup_channel_id, updated_at)
                 VALUES (?, ?, ?)
             """, (str(interaction.guild.id), str(channel.id), datetime.now().isoformat()))
-
             await db_instance.connection.commit()
 
-            # Envoyer la présentation complète dans le canal
-            await self.send_bot_presentation(channel)
+            # Envoyer le guide dans le canal configuré
+            embed = discord.Embed(
+                title="🤖 Matching Bot - Guide Complet",
+                description="Bot de rencontre sécurisé avec système de double opt-in",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(
+                name="🚀 Commandes de Base",
+                value="`/help` - Guide complet\n`/createprofile` - Créer son profil\n`/findmatch` - Trouver des matches",
+                inline=False
+            )
+
+            embed.add_field(
+                name="🛡️ Sécurité",
+                value="Séparation stricte mineurs/majeurs • Double opt-in • Interactions privées",
+                inline=False
+            )
+
+            await channel.send(embed=embed)
 
             await interaction.response.send_message(
-                f"✅ **Configuration terminée !**\n\n"
-                f"Canal configuré : {channel.mention}\n"
-                f"Le guide d'utilisation a été posté dans le canal.\n\n"
-                f"Les utilisateurs peuvent maintenant découvrir le bot ! 🚀",
+                f"✅ Canal de présentation configuré : {channel.mention}",
                 ephemeral=True
             )
 
         except Exception as e:
-            print(f"❌ Erreur setup: {e}")
             await interaction.response.send_message(
-                "❌ Une erreur s'est produite lors de la configuration.",
+                f"❌ Erreur lors de la configuration : {str(e)}",
                 ephemeral=True
             )
 
@@ -139,7 +133,7 @@ class Setup(commands.Cog):
         try:
             # Utiliser l'icône du serveur si disponible
             guild_icon = channel.guild.icon.url if channel.guild.icon else None
-            
+
             embed = discord.Embed(
                 title="💖 **MATCHING BOT** - *Rencontres Sécurisées*",
                 description=(

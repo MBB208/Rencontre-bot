@@ -1,168 +1,220 @@
-
 import aiosqlite
 import json
-import math
 import os
-import re
-import unicodedata
-from discord.ext import commands
+import logging
+from datetime import datetime
+from typing import List, Optional
+
+# Définir le chemin de la base de données
+DB_PATH = "data/matching_bot.db"
+
+# Configuration du logging réduit
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('logs/matching_debug.log', encoding='utf-8'),
+        logging.StreamHandler()
+    ]
+)
+
+logger = logging.getLogger('MatchingBot')
 
 class DatabaseManager:
-    """Gestionnaire principal de la base de données SQLite"""
-    
+    """Gestionnaire de base de données centralisé"""
+
     def __init__(self, db_path: str = "data/matching_bot.db"):
         self.db_path = db_path
         self.connection = None
-        
+
     async def connect(self):
-        """Établir la connexion à la base de données"""
-        # S'assurer que le dossier existe
-        os.makedirs("data", exist_ok=True)
-        
-        self.connection = await aiosqlite.connect(self.db_path)
-        
-        # Activer les foreign keys
-        await self.connection.execute("PRAGMA foreign_keys = ON")
-        
-        # Créer les tables de base
-        await self.init_tables()
-        
-        print("✅ Base de données initialisée")
-        
-    async def init_tables(self):
-        """Créer toutes les tables nécessaires"""
-        # Table profiles principale
-        await self.connection.execute("""
-            CREATE TABLE IF NOT EXISTS profiles (
-                user_id TEXT PRIMARY KEY,
-                prenom TEXT NOT NULL,
-                pronoms TEXT NOT NULL,
-                age INTEGER NOT NULL,
-                interets TEXT NOT NULL,
-                interets_canonical TEXT,
-                description TEXT,
-                avatar_url TEXT,
-                vector TEXT,
-                prefs TEXT DEFAULT '{}',
-                activity_score REAL DEFAULT 1.0,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Table matches pour le système de matching
-        await self.connection.execute("""
-            CREATE TABLE IF NOT EXISTS matches (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user1_id TEXT NOT NULL,
-                user2_id TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'pending',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Table match_history pour éviter les répétitions
-        await self.connection.execute("""
-            CREATE TABLE IF NOT EXISTS match_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user1_id TEXT NOT NULL,
-                user2_id TEXT NOT NULL,
-                action TEXT NOT NULL,
-                timestamp TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Table reports pour la modération
-        await self.connection.execute("""
-            CREATE TABLE IF NOT EXISTS reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                reporter_id TEXT NOT NULL,
-                reported_id TEXT NOT NULL,
-                reason TEXT,
-                timestamp TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        await self.connection.commit()
-        
+        """Connexion à la base de données"""
+        try:
+            # Créer le dossier data s'il n'existe pas
+            os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+
+            self.connection = await aiosqlite.connect(self.db_path)
+            await self.create_tables()
+            print("✅ Base de données connectée")
+            return True
+        except Exception as e:
+            print(f"❌ Erreur connexion DB: {e}")
+            return False
+
+    async def create_tables(self):
+        """Créer les tables nécessaires"""
+        try:
+            # Table des profils
+            await self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS profiles (
+                    user_id TEXT PRIMARY KEY,
+                    prenom TEXT NOT NULL,
+                    pronoms TEXT,
+                    age INTEGER NOT NULL,
+                    interets TEXT,
+                    description TEXT,
+                    avatar_url TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+
+            # Table historique des matches
+            await self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS match_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user1_id TEXT NOT NULL,
+                    user2_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    timestamp TEXT NOT NULL
+                )
+            """)
+
+            # Vérifier et corriger la structure de la table matches si nécessaire
+            try:
+                # Vérifier si les colonnes existent
+                async with self.connection.execute("PRAGMA table_info(matches)") as cursor:
+                    columns = await cursor.fetchall()
+                    column_names = [col[1] for col in columns]
+                
+                if 'user1_id' not in column_names or 'user2_id' not in column_names:
+                    # Recréer la table avec la bonne structure
+                    await self.connection.execute("DROP TABLE IF EXISTS matches")
+                    await self.connection.execute("""
+                        CREATE TABLE matches (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            user1_id TEXT NOT NULL,
+                            user2_id TEXT NOT NULL,
+                            status TEXT DEFAULT 'pending',
+                            created_at TEXT NOT NULL
+                        )
+                    """)
+                    print("🔧 Table matches recréée avec la bonne structure")
+            except Exception as e:
+                print(f"⚠️ Erreur lors de la vérification des colonnes: {e}")
+
+            # Table des matches
+            await self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS matches (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user1_id TEXT NOT NULL,
+                    user2_id TEXT NOT NULL,
+                    status TEXT DEFAULT 'pending',
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            # Table des vues (pour l'historique temporaire)
+            await self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS viewed_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    viewer_id TEXT NOT NULL,
+                    viewed_id TEXT NOT NULL,
+                    viewed_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    UNIQUE(viewer_id, viewed_id)
+                )
+            """)
+
+            # Table des signalements
+            await self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS reports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    reporter_id TEXT NOT NULL,
+                    reported_id TEXT NOT NULL,
+                    reason TEXT,
+                    timestamp TEXT NOT NULL
+                )
+            """)
+
+            # Table de configuration serveur
+            await self.connection.execute("""
+                CREATE TABLE IF NOT EXISTS server_config (
+                    guild_id TEXT PRIMARY KEY,
+                    setup_channel_id TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            """)
+
+            await self.connection.commit()
+            print("✅ Tables créées/vérifiées")
+
+        except Exception as e:
+            print(f"❌ Erreur création tables: {e}")
+
+    async def is_connected(self):
+        """Vérifier si la connexion est active"""
+        if not self.connection:
+            return False
+        try:
+            await self.connection.execute("SELECT 1")
+            return True
+        except:
+            return False
+
+    async def reconnect(self):
+        """Reconnecter à la base"""
+        if self.connection:
+            await self.connection.close()
+        return await self.connect()
+
     async def close(self):
         """Fermer la connexion"""
         if self.connection:
             await self.connection.close()
+            self.connection = None
 
-# Instance globale
+# Instance globale de la base de données
 db_instance = DatabaseManager()
 
-def serialize_interests(interests_list: list) -> str:
-    """Convertit une liste d'intérêts en JSON"""
-    if not interests_list:
-        return "[]"
-    # Nettoyer et normaliser
-    clean_interests = [interest.strip() for interest in interests_list if interest.strip()]
-    return json.dumps(clean_interests, ensure_ascii=False)
-
-def deserialize_interests(interests_json: str) -> list:
-    """Convertit un JSON d'intérêts en liste"""
+def serialize_interests(interests_list: List[str]) -> str:
+    """Sérialise une liste d'intérêts en JSON"""
     try:
-        if not interests_json or interests_json.strip() == "":
-            return []
-        return json.loads(interests_json)
-    except (json.JSONDecodeError, TypeError):
+        return json.dumps(interests_list, ensure_ascii=False)
+    except Exception:
+        return "[]"
+
+def deserialize_interests(interests_json: str) -> List[str]:
+    """Désérialise des intérêts JSON en liste"""
+    try:
+        return json.loads(interests_json) if interests_json else []
+    except Exception:
         return []
 
-def serialize_vector(vector_data) -> str:
-    """Sérialise un vecteur en JSON"""
-    if vector_data is None:
-        return "[]"
-    if isinstance(vector_data, (list, tuple)):
-        return json.dumps(list(vector_data))
-    return str(vector_data)
+def validate_age(age_str: str) -> Optional[int]:
+    """Valide un âge (13-30 ans)"""
+    try:
+        age = int(age_str)
+        if 13 <= age <= 30:
+            return age
+    except ValueError:
+        pass
+    return None
 
-def normalize_text(text: str) -> str:
-    """Normalise un texte (minuscules, sans accents)"""
-    if not text:
-        return ""
-    # Convertir en minuscules
-    text = text.lower().strip()
-    # Supprimer les accents
-    text = unicodedata.normalize('NFD', text)
-    text = ''.join(c for c in text if unicodedata.category(c) != 'Mn')
-    return text
+def is_minor(age: int) -> bool:
+    """Vérifie si l'utilisateur est mineur"""
+    return age < 18
 
-def calculate_interests_similarity(interests_a: list, interests_b: list) -> float:
-    """Calcule la similarité entre deux listes d'intérêts"""
-    if not interests_a or not interests_b:
-        return 0.0
-    
-    # Normaliser les intérêts
-    norm_a = set(normalize_text(interest) for interest in interests_a)
-    norm_b = set(normalize_text(interest) for interest in interests_b)
-    
-    # Calculer la similarité de Jaccard
-    intersection = len(norm_a & norm_b)
-    union = len(norm_a | norm_b)
-    
-    if union == 0:
-        return 0.0
-    
-    base_score = intersection / union
-    
-    # Bonus pour les intérêts rares (approximation simple)
-    rare_bonus = 0.1 * min(intersection, 2)  # Bonus pour jusqu'à 2 intérêts communs rares
-    
-    return min(base_score + rare_bonus, 1.0)  # Cap à 100%
+def check_age_compatibility(age1: int, age2: int) -> bool:
+    """Vérifie la compatibilité d'âge"""
+    # Séparation stricte mineurs/majeurs
+    if is_minor(age1) != is_minor(age2):
+        return False
 
-class Utils(commands.Cog):
-    """Cog contenant les fonctions utilitaires"""
+    # Écart maximum de 8 ans
+    return abs(age1 - age2) <= 8
 
-    def __init__(self, bot):
-        self.bot = bot
+async def init_database():
+    """Initialise la base de données avec toutes les tables nécessaires"""
+    try:
+        # S'assurer que l'instance DB est connectée
+        if not await db_instance.is_connected():
+            await db_instance.connect()
 
-    async def cog_load(self):
-        """Initialiser la base de données quand le cog est chargé"""
-        await db_instance.connect()
+        print("✅ Base de données initialisée avec succès")
+        return True
 
-async def setup(bot):
-    """Fonction obligatoire pour charger le cog"""
-    await bot.add_cog(Utils(bot))
+    except Exception as e:
+        print(f"❌ Erreur lors de l'initialisation de la base: {e}")
+        return False

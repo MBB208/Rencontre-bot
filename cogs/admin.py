@@ -54,7 +54,7 @@ class Admin(commands.Cog):
                 profile_dict = {
                     'user_id': profile[0],
                     'prenom': profile[1],
-                    'pronoms': profile[2], 
+                    'pronoms': profile[2],
                     'age': profile[3],
                     'interets': profile[4],  # Déjà en JSON
                     'description': profile[5],
@@ -96,12 +96,10 @@ class Admin(commands.Cog):
                 ephemeral=True
             )
 
-    @app_commands.command(name="list_profiles", description="[ADMIN] Lister les profils existants")
-    @app_commands.describe(limit="Nombre maximum de profils à afficher (défaut: 10)")
-    async def list_profiles(self, interaction: discord.Interaction, limit: int = 10):
-        """Afficher la liste des profils avec informations de base"""
+    @app_commands.command(name="list_profiles", description="[ADMIN] Lister tous les profils")
+    async def list_profiles(self, interaction: discord.Interaction):
+        """Liste tous les profils enregistrés"""
 
-        # Vérification STRICTE des permissions d'administration
         if not await self.is_admin(interaction):
             await interaction.response.send_message(
                 "❌ Cette commande est réservée aux administrateurs du serveur uniquement.",
@@ -110,65 +108,58 @@ class Admin(commands.Cog):
             return
 
         try:
-            # Compter le total des profils
-            async with db_instance.connection.execute("SELECT COUNT(*) FROM profiles") as cursor:
-                total_count = await cursor.fetchone()
-                total_profiles = total_count[0] if total_count else 0
+            # S'assurer que la connexion DB est active
+            if not await db_instance.is_connected():
+                await db_instance.reconnect()
 
-            if total_profiles == 0:
+            async with db_instance.connection.execute(
+                "SELECT user_id, prenom, age, created_at FROM profiles ORDER BY created_at DESC"
+            ) as cursor:
+                profiles = await cursor.fetchall()
+
+            if not profiles:
                 await interaction.response.send_message(
-                    "📭 Aucun profil trouvé dans la base de données.",
+                    "📭 **Aucun profil trouvé**\n\nLa base de données ne contient aucun profil.",
                     ephemeral=True
                 )
                 return
 
-            # Limiter entre 1 et 50 profils
-            limit = max(1, min(limit, 50))
-
-            # Récupérer les profils avec limite
-            async with db_instance.connection.execute(
-                "SELECT user_id, prenom, pronoms, age FROM profiles ORDER BY rowid DESC LIMIT ?", 
-                (limit,)
-            ) as cursor:
-                profiles = await cursor.fetchall()
-
-            # Créer l'embed
+            # Créer l'embed avec liste des profils
             embed = discord.Embed(
-                title="👥 Liste des Profils",
-                description=f"Affichage de {len(profiles)} profils sur {total_profiles} au total",
+                title=f"📋 Liste des Profils ({len(profiles)})",
                 color=discord.Color.blue()
             )
 
-            # Ajouter les profils
-            profiles_text = ""
-            for i, profile in enumerate(profiles, 1):
-                user_id, prenom, pronoms, age = profile
-                profiles_text += f"**{i}.** {prenom} ({pronoms}, {age} ans) - ID: `{user_id}`\n"
+            profiles_text = []
+            for i, profile in enumerate(profiles[:15], 1):  # Limiter à 15 pour éviter dépassement
+                user_id, prenom, pronoms, age = profile[0], profile[1], profile[2], profile[3]
 
-            if profiles_text:
-                embed.add_field(
-                    name="📋 Profils récents",
-                    value=profiles_text[:1024],  # Limite Discord
-                    inline=False
-                )
+                # Essayer de récupérer l'utilisateur Discord
+                try:
+                    user = await self.bot.fetch_user(int(user_id))
+                    username = f"{user.name}"
+                except:
+                    username = "Introuvable"
 
-            # Statistiques supplémentaires
-            embed.add_field(
-                name="📊 Statistiques",
-                value=f"**Total des profils :** {total_profiles}\n"
-                      f"**Profils affichés :** {len(profiles)}\n"
-                      f"**Limite actuelle :** {limit}",
-                inline=True
-            )
+                profiles_text.append(f"**{i}.** {prenom} ({age}ans, {pronoms}) - {username} - ID:`{user_id}`")
 
-            embed.set_footer(text=f"Utilisez limit=X pour afficher plus de profils (max: 50)")
+            # Diviser en chunks si trop long
+            description = "\n".join(profiles_text)
+            if len(description) > 4096:
+                # Diviser la description
+                chunks = [profiles_text[i:i+10] for i in range(0, len(profiles_text), 10)]
+                description = "\n".join(chunks[0])
+                embed.set_footer(text=f"Partie 1/{len(chunks)} - Total: {len(profiles)} profils")
+            else:
+                embed.set_footer(text=f"Total: {len(profiles)} profils")
 
+            embed.description = description
             await interaction.response.send_message(embed=embed, ephemeral=True)
 
         except Exception as e:
-            print(f"❌ Erreur lors de l'affichage des profils: {e}")
+            print(f"❌ Erreur list_profiles: {e}")
             await interaction.response.send_message(
-                "❌ Une erreur s'est produite lors de l'affichage des profils.",
+                "❌ Une erreur s'est produite lors de l'affichage de la liste.",
                 ephemeral=True
             )
 
@@ -422,7 +413,7 @@ class Admin(commands.Cog):
         try:
             # Vérifier si le profil existe
             async with db_instance.connection.execute(
-                "SELECT prenom, pronoms, age FROM profiles WHERE user_id = ?", 
+                "SELECT prenom, pronoms, age FROM profiles WHERE user_id = ?",
                 (str(user.id),) # Assurez-vous que user_id est une chaîne
             ) as cursor:
                 profile = await cursor.fetchone()
@@ -438,7 +429,7 @@ class Admin(commands.Cog):
 
             # Supprimer le profil
             await db_instance.connection.execute(
-                "DELETE FROM profiles WHERE user_id = ?", 
+                "DELETE FROM profiles WHERE user_id = ?",
                 (str(user.id),) # Assurez-vous que user_id est une chaîne
             )
 
@@ -453,7 +444,7 @@ class Admin(commands.Cog):
                 "DELETE FROM match_history WHERE user1_id = ? OR user2_id = ?",
                 (str(user.id), str(user.id))
             )
-            
+
             # Supprimer les entrées de la table de matches
             await db_instance.connection.execute(
                 "DELETE FROM matches WHERE user1_id = ? OR user2_id = ?",
@@ -481,6 +472,126 @@ class Admin(commands.Cog):
                 "❌ Une erreur s'est produite lors de la suppression du profil.",
                 ephemeral=True
             )
+
+    @app_commands.command(name="test_compatibility", description="[ADMIN] Tester la compatibilité entre deux utilisateurs")
+    @app_commands.describe(user1="Premier utilisateur", user2="Deuxième utilisateur")
+    async def test_compatibility(self, interaction: discord.Interaction, user1: discord.User, user2: discord.User):
+        """Tester la compatibilité entre deux profils spécifiques"""
+        if not await self.is_admin(interaction):
+            await interaction.response.send_message(
+                "❌ Cette commande est réservée aux administrateurs du serveur uniquement.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            # Récupérer les deux profils
+            async with db_instance.connection.execute(
+                "SELECT * FROM profiles WHERE user_id IN (?, ?)",
+                (str(user1.id), str(user2.id))
+            ) as cursor:
+                profiles = await cursor.fetchall()
+
+            if len(profiles) != 2:
+                missing_users = []
+                found_ids = [p[0] for p in profiles]
+                if str(user1.id) not in found_ids:
+                    missing_users.append(user1.mention)
+                if str(user2.id) not in found_ids:
+                    missing_users.append(user2.mention)
+
+                await interaction.followup.send(
+                    f"❌ Profils manquants pour: {', '.join(missing_users)}",
+                    ephemeral=True
+                )
+                return
+
+            profile1 = profiles[0] if profiles[0][0] == str(user1.id) else profiles[1]
+            profile2 = profiles[1] if profiles[0][0] == str(user1.id) else profiles[0]
+
+            # Import de la classe Match pour utiliser l'algorithme
+            from .match import Match
+            match_cog = Match(self.bot)
+
+            # Calcul de compatibilité avec logs détaillés
+            compatibility = match_cog.calculate_advanced_compatibility(profile1, profile2)
+
+            embed = discord.Embed(
+                title="🧪 Test de Compatibilité",
+                color=discord.Color.blue()
+            )
+
+            embed.add_field(
+                name="👤 Profil 1",
+                value=f"**{user1.mention}**\n{profile1[1]} ({profile1[3]} ans)",
+                inline=True
+            )
+
+            embed.add_field(
+                name="👤 Profil 2",
+                value=f"**{user2.mention}**\n{profile2[1]} ({profile2[3]} ans)",
+                inline=True
+            )
+
+            embed.add_field(
+                name="📊 Résultat",
+                value=f"**{compatibility:.1f}%**",
+                inline=True
+            )
+
+            # Analyse détaillée
+            age_diff = abs(profile1[3] - profile2[3])
+            is_minor_mix = (profile1[3] < 18) != (profile2[3] < 18)
+
+            analysis = []
+            if is_minor_mix:
+                analysis.append("❌ Mélange mineur/majeur")
+            elif age_diff > 8:
+                analysis.append(f"❌ Écart d'âge trop grand ({age_diff} ans)")
+            else:
+                analysis.append(f"✅ Âges compatibles (écart: {age_diff} ans)")
+
+            # Analyser les intérêts
+            try:
+                interests1 = profile1[4] if profile1[4] else ""
+                interests2 = profile2[4] if profile2[4] else ""
+
+                if interests1.startswith('['):
+                    interests1_list = json.loads(interests1)
+                    interests1 = ', '.join(interests1_list)
+                if interests2.startswith('['):
+                    interests2_list = json.loads(interests2)
+                    interests2 = ', '.join(interests2_list)
+
+                keywords1 = set(match_cog.extract_keywords(interests1.lower()))
+                keywords2 = set(match_cog.extract_keywords(interests2.lower()))
+                common = keywords1.intersection(keywords2)
+
+                analysis.append(f"🎯 Intérêts communs: {len(common)} ({', '.join(list(common)[:5])})")
+
+            except Exception as e:
+                analysis.append(f"⚠️ Erreur analyse intérêts: {e}")
+
+            embed.add_field(
+                name="🔍 Analyse",
+                value='\n'.join(analysis),
+                inline=False
+            )
+
+            embed.set_footer(text="Consultez /debug_logs pour voir les détails du calcul")
+
+            await interaction.followup.send(embed=embed, ephemeral=True)
+
+        except Exception as e:
+            print(f"❌ Erreur test_compatibility: {e}")
+            await interaction.followup.send(
+                f"❌ Erreur lors du test: {str(e)[:100]}",
+                ephemeral=True
+            )
+
+
 
 async def setup(bot):
     """Fonction obligatoire pour charger le cog"""
