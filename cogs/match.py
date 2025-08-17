@@ -526,14 +526,14 @@ class Match(commands.Cog):
             logger.error(f"❌ Erreur record_like: {e}")
 
     async def send_notification(self, target_user_id: str, liker_profile, action: str = "like"):
-        """Envoyer notification SANS boutons (selon vos règles)"""
+        """Envoyer notification AVEC boutons pour répondre directement"""
         try:
             target_user = await self.bot.fetch_user(int(target_user_id))
             dm_channel = await target_user.create_dm()
 
             if action == "like":
                 title = "💖 Quelqu'un s'intéresse à vous !"
-                description = f"**{liker_profile[1]}** a montré de l'intérêt pour votre profil.\n\n🔄 Utilisez `/findmatch` pour voir de nouveaux profils et peut-être le retrouver !"
+                description = f"**{liker_profile[1]}** a montré de l'intérêt pour votre profil.\n\n💡 Vous pouvez répondre directement avec les boutons ci-dessous !"
                 color = discord.Color.green()
             else:  # pass
                 title = "👋 Information"
@@ -562,7 +562,13 @@ class Match(commands.Cog):
                 description_text = liker_profile[6][:300] + ("..." if len(liker_profile[6]) > 300 else "")
                 embed.add_field(name="📝 Description", value=description_text, inline=False)
 
-            await dm_channel.send(embed=embed)
+            # Ajouter boutons seulement pour les likes
+            if action == "like":
+                view = NotificationResponseView(self, liker_profile[0], target_user_id)
+                await dm_channel.send(embed=embed, view=view)
+            else:
+                await dm_channel.send(embed=embed)
+
             return True
 
         except Exception as e:
@@ -860,6 +866,11 @@ class MatchActionView(discord.ui.View):
             requester_user = await self.cog.bot.fetch_user(int(self.requester_user_id))
             target_user = await self.cog.bot.fetch_user(int(self.target_user_id))
 
+            # Désactiver les boutons AVANT de répondre
+            for item in self.children:
+                item.disabled = True
+            await interaction.edit_original_response(view=self)
+
             # Notifier le requester (celui qui vient de cliquer)
             await interaction.response.send_message(
                 f"🎉 **C'est un Match !**\n\n"
@@ -975,6 +986,156 @@ class MatchActionView(discord.ui.View):
 
         except Exception as e:
             logger.error(f"❌ Erreur report: {e}")
+            await interaction.response.send_message("❌ Erreur lors du signalement.", ephemeral=True)
+
+
+class NotificationResponseView(discord.ui.View):
+    """Boutons de réponse dans les notifications de match"""
+
+    def __init__(self, cog, liker_user_id: str, target_user_id: str):
+        super().__init__(timeout=3600)  # 1 heure
+        self.cog = cog
+        self.liker_user_id = liker_user_id
+        self.target_user_id = target_user_id
+
+    @discord.ui.button(label="💖 Intéressé(e) aussi", style=discord.ButtonStyle.green)
+    async def accept_interest(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Accepter l'intérêt - Créer un match mutuel"""
+        try:
+            await self.cog.ensure_db_connection()
+
+            # Récupérer les profils
+            async with db_instance.connection.execute(
+                "SELECT * FROM profiles WHERE user_id = ?", (self.target_user_id,)
+            ) as cursor:
+                target_profile = await cursor.fetchone()
+
+            async with db_instance.connection.execute(
+                "SELECT * FROM profiles WHERE user_id = ?", (self.liker_user_id,)
+            ) as cursor:
+                liker_profile = await cursor.fetchone()
+
+            if not target_profile or not liker_profile:
+                await interaction.response.send_message("❌ Erreur : profils non trouvés.", ephemeral=True)
+                return
+
+            # Enregistrer le like retour
+            await self.cog.record_like(self.target_user_id, self.liker_user_id)
+
+            # Créer le match mutuel
+            timestamp = datetime.now().isoformat()
+            await db_instance.connection.execute("""
+                INSERT INTO matches (user1_id, user2_id, status, created_at)
+                VALUES (?, ?, 'matched', ?)
+            """, (self.liker_user_id, self.target_user_id, timestamp))
+
+            await db_instance.connection.commit()
+
+            # Récupérer les utilisateurs Discord
+            liker_user = await self.cog.bot.fetch_user(int(self.liker_user_id))
+            target_user = await self.cog.bot.fetch_user(int(self.target_user_id))
+
+            # Répondre à celui qui vient d'accepter
+            await interaction.response.send_message(
+                f"🎉 **C'est un Match !**\n\n"
+                f"**{liker_profile[1]}** et vous vous intéressez mutuellement !\n\n"
+                f"🆔 **Identité révélée :**\n"
+                f"**Discord :** {liker_user.mention}\n"
+                f"**Prénom :** {liker_profile[1]}\n\n"
+                f"💕 Vous pouvez maintenant vous contacter directement !",
+                ephemeral=True
+            )
+
+            # Notifier l'autre personne
+            try:
+                liker_dm = await liker_user.create_dm()
+                embed = discord.Embed(
+                    title="🎉 C'est un Match !",
+                    description=f"**{target_profile[1]}** s'intéresse aussi à vous !",
+                    color=discord.Color.gold()
+                )
+
+                embed.add_field(
+                    name="🆔 Identité révélée",
+                    value=f"**Discord :** {target_user.mention}\n**Prénom :** {target_profile[1]}",
+                    inline=False
+                )
+
+                embed.add_field(
+                    name="💕 Félicitations !",
+                    value="Vous pouvez maintenant vous contacter directement !",
+                    inline=False
+                )
+
+                await liker_dm.send(embed=embed)
+
+            except Exception as e:
+                logger.error(f"❌ Erreur notification liker: {e}")
+
+            # Désactiver les boutons
+            for item in self.children:
+                item.disabled = True
+            await interaction.edit_original_response(view=self)
+
+            logger.info(f"🎉 Match créé via notification: {liker_profile[1]} ↔ {target_profile[1]}")
+
+        except Exception as e:
+            logger.error(f"❌ Erreur accept_interest: {e}")
+            await interaction.response.send_message("❌ Erreur lors de l'acceptation.", ephemeral=True)
+
+    @discord.ui.button(label="❌ Pas intéressé(e)", style=discord.ButtonStyle.red)
+    async def decline_interest(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Refuser l'intérêt"""
+        try:
+            await interaction.response.send_message(
+                "👋 **Réponse envoyée**\n\n"
+                "Vous avez poliment décliné cette correspondance.\n"
+                "L'autre personne ne sera pas notifiée du refus.",
+                ephemeral=True
+            )
+
+            # Désactiver les boutons
+            for item in self.children:
+                item.disabled = True
+            await interaction.edit_original_response(view=self)
+
+        except Exception as e:
+            logger.error(f"❌ Erreur decline_interest: {e}")
+            await interaction.response.send_message("❌ Erreur lors du refus.", ephemeral=True)
+
+    @discord.ui.button(label="🚨 Signaler", style=discord.ButtonStyle.gray)
+    async def report_user(self, interaction: discord.Interaction, button: discord.ui.Button):
+        """Signaler l'utilisateur"""
+        try:
+            await self.cog.ensure_db_connection()
+
+            # Enregistrer le signalement
+            await db_instance.connection.execute("""
+                INSERT INTO reports (reporter_id, reported_id, reason, timestamp)
+                VALUES (?, ?, ?, ?)
+            """, (
+                self.target_user_id,
+                self.liker_user_id,
+                "Signalé via notification",
+                datetime.now().isoformat()
+            ))
+
+            await db_instance.connection.commit()
+
+            await interaction.response.send_message(
+                "✅ **Profil signalé**\n\n"
+                "Merci pour votre signalement ! 🛡️\n"
+                "Les modérateurs examineront ce profil.",
+                ephemeral=True
+            )
+
+            # Désactiver les boutons
+            for item in self.children:
+                item.disabled = True
+            await interaction.edit_original_response(view=self)
+
+        except Exception as e:
+            logger.error(f"❌ Erreur report_user: {e}")
             await interaction.response.send_message("❌ Erreur lors du signalement.", ephemeral=True)
 
 
